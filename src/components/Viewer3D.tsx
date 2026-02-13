@@ -2,7 +2,7 @@ import { Suspense, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera, Environment, Grid, useGLTF, useAnimations, Html } from '@react-three/drei'
 import * as THREE from 'three'
-import type { NodeTransform, NoteAnnotation } from '../App'
+import type { NodeTransform, NoteAnnotation, TextAnnotation } from '../App'
 
 interface ModelProps {
   url: string
@@ -717,54 +717,133 @@ interface Viewer3DProps {
   notes: NoteAnnotation[]
   isPlacingNote: boolean
   onNotePlace: (position: { x: number; y: number; z: number }) => void
+  // Text annotations
+  textAnnotations: TextAnnotation[]
+  isPlacingText: boolean
+  onTextPlace: (position: { x: number; y: number; z: number }) => void
 }
 
 // Component to render note markers in 3D space
 function NoteMarkers({ notes }: { notes: NoteAnnotation[] }) {
   return (
     <>
-      {notes.map((note) => (
-        <group key={note.id} position={[note.positionX, note.positionY, note.positionZ]}>
-          {/* Pin marker */}
-          <mesh>
-            <sphereGeometry args={[0.1, 16, 16]} />
-            <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.5} />
-          </mesh>
-          {/* Pin stick */}
-          <mesh position={[0, -0.15, 0]}>
-            <cylinderGeometry args={[0.02, 0.02, 0.3, 8]} />
-            <meshStandardMaterial color="#dc2626" />
-          </mesh>
-          {/* HTML label */}
-          {note.text && (
-            <Html
-              position={[0, 0.3, 0]}
-              center
-              distanceFactor={10}
+      {notes.map((note) => {
+        const offsetY = note.offsetY || 0
+        const labelHeight = 0.3 // ความสูงของ label จากจุดบนสุดของเส้น
+        const topY = offsetY + labelHeight
+        const bottomY = 0 // ตำแหน่งพื้น (relative to note.positionY)
+        
+        // สร้างเส้นจากพื้นไปยังตำแหน่ง label
+        const linePoints = [
+          new THREE.Vector3(0, bottomY, 0),
+          new THREE.Vector3(0, topY, 0),
+        ]
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints)
+
+        return (
+          <group 
+            key={note.id} 
+            position={[
+              note.positionX, 
+              note.positionY, 
+              note.positionZ
+            ]}
+          >
+            {/* เส้นที่ลากจากพื้นไปยัง label */}
+            <line geometry={lineGeometry}>
+              <lineBasicMaterial 
+                color="#ef4444" 
+                linewidth={2}
+                transparent
+                opacity={0.8}
+              />
+            </line>
+            
+            {/* จุดที่ปลายบนสุดของเส้น */}
+            <mesh position={[0, topY, 0]}>
+              <sphereGeometry args={[0.08, 16, 16]} />
+              <meshStandardMaterial 
+                color="#ef4444" 
+                emissive="#ef4444" 
+                emissiveIntensity={0.5} 
+              />
+            </mesh>
+
+            {/* HTML label */}
+            {note.text && (
+              <Html
+                position={[0, topY + 0.15, 0]}
+                center
+                distanceFactor={10}
+                style={{
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                }}
+              >
+                <div className="bg-black/80 text-white px-2 py-1 rounded text-xs max-w-[200px] break-words">
+                  {note.text}
+                </div>
+              </Html>
+            )}
+          </group>
+        )
+      })}
+    </>
+  )
+}
+
+// Component to render text annotations in 3D space
+function TextAnnotations({ textAnnotations }: { textAnnotations: TextAnnotation[] }) {
+  return (
+    <>
+      {textAnnotations.map((textAnnotation) => (
+        <group 
+          key={textAnnotation.id} 
+          position={[
+            textAnnotation.positionX, 
+            textAnnotation.positionY + (textAnnotation.offsetY || 0), 
+            textAnnotation.positionZ
+          ]}
+        >
+          <Html
+            center
+            distanceFactor={10}
+            style={{
+              pointerEvents: 'none',
+              userSelect: 'none',
+              transform: 'translate(-50%, -50%)',
+            }}
+          >
+            <div
               style={{
-                pointerEvents: 'none',
-                userSelect: 'none',
+                fontSize: `${textAnnotation.fontSize}px`,
+                color: textAnnotation.color,
+                fontWeight: 'bold',
+                textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
+                whiteSpace: 'nowrap',
               }}
             >
-              <div className="bg-black/80 text-white px-2 py-1 rounded text-xs max-w-[200px] break-words">
-                {note.text}
-              </div>
-            </Html>
-          )}
+              {textAnnotation.text}
+            </div>
+          </Html>
         </group>
       ))}
     </>
   )
 }
 
-// Component to handle click events for placing notes
+// Component to handle click events for placing notes and text annotations
 function ClickHandler({ 
   isPlacingNote, 
   onNotePlace,
+  isPlacingText,
+  onTextPlace,
   modelRef 
 }: { 
   isPlacingNote: boolean
   onNotePlace: (position: { x: number; y: number; z: number }) => void
+  isPlacingText: boolean
+  onTextPlace: (position: { x: number; y: number; z: number }) => void
   modelRef: React.RefObject<any>
 }) {
   const { camera, gl, scene } = useThree()
@@ -772,13 +851,14 @@ function ClickHandler({
   const mouse = useRef(new THREE.Vector2())
 
   useEffect(() => {
-    if (!isPlacingNote) {
+    const isPlacing = isPlacingNote || isPlacingText
+    if (!isPlacing) {
       gl.domElement.style.cursor = 'default'
       return
     }
 
     const handleClick = (event: MouseEvent) => {
-      if (!isPlacingNote) return
+      if (!isPlacing) return
 
       const rect = gl.domElement.getBoundingClientRect()
       mouse.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
@@ -792,7 +872,11 @@ function ClickHandler({
         const intersects = raycaster.current.intersectObject(modelGroup, true)
         if (intersects.length > 0) {
           const point = intersects[0].point
-          onNotePlace({ x: point.x, y: point.y, z: point.z })
+          if (isPlacingNote) {
+            onNotePlace({ x: point.x, y: point.y, z: point.z })
+          } else if (isPlacingText) {
+            onTextPlace({ x: point.x, y: point.y, z: point.z })
+          }
           return
         }
       }
@@ -809,7 +893,11 @@ function ClickHandler({
         const intersects = raycaster.current.intersectObjects(allObjects, true)
         if (intersects.length > 0) {
           const point = intersects[0].point
-          onNotePlace({ x: point.x, y: point.y, z: point.z })
+          if (isPlacingNote) {
+            onNotePlace({ x: point.x, y: point.y, z: point.z })
+          } else if (isPlacingText) {
+            onTextPlace({ x: point.x, y: point.y, z: point.z })
+          }
           return
         }
       }
@@ -820,7 +908,11 @@ function ClickHandler({
       raycaster.current.ray.intersectPlane(plane, intersectPoint)
       
       if (intersectPoint) {
-        onNotePlace({ x: intersectPoint.x, y: intersectPoint.y, z: intersectPoint.z })
+        if (isPlacingNote) {
+          onNotePlace({ x: intersectPoint.x, y: intersectPoint.y, z: intersectPoint.z })
+        } else if (isPlacingText) {
+          onTextPlace({ x: intersectPoint.x, y: intersectPoint.y, z: intersectPoint.z })
+        }
       }
     }
 
@@ -831,7 +923,7 @@ function ClickHandler({
       gl.domElement.removeEventListener('click', handleClick)
       gl.domElement.style.cursor = 'default'
     }
-  }, [isPlacingNote, camera, gl, scene, onNotePlace, modelRef])
+  }, [isPlacingNote, isPlacingText, camera, gl, scene, onNotePlace, onTextPlace, modelRef])
 
   return null
 }
@@ -894,6 +986,9 @@ export default function Viewer3D({
   notes,
   isPlacingNote,
   onNotePlace,
+  textAnnotations,
+  isPlacingText,
+  onTextPlace,
 }: Viewer3DProps) {
   const controlsRef = useRef<any>(null)
   const modelRef = useRef<any>(null)
@@ -974,9 +1069,12 @@ export default function Viewer3D({
             />
           )}
           <NoteMarkers notes={notes} />
+          <TextAnnotations textAnnotations={textAnnotations} />
           <ClickHandler 
             isPlacingNote={isPlacingNote} 
             onNotePlace={onNotePlace}
+            isPlacingText={isPlacingText}
+            onTextPlace={onTextPlace}
             modelRef={modelRef}
           />
           <OrbitControls

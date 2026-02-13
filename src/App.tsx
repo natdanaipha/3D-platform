@@ -23,6 +23,19 @@ export interface NoteAnnotation {
   positionY: number
   positionZ: number
   text: string
+  offsetY: number // ความสูงจากพื้น (offset จาก positionY)
+  createdAt: Date
+}
+
+export interface TextAnnotation {
+  id: string
+  positionX: number
+  positionY: number
+  positionZ: number
+  text: string
+  fontSize: number
+  color: string
+  offsetY: number // ความสูงจากพื้น (offset จาก positionY)
   createdAt: Date
 }
 
@@ -115,6 +128,10 @@ function App() {
   const [notes, setNotes] = useState<NoteAnnotation[]>([])
   const [isPlacingNote, setIsPlacingNote] = useState(false)
 
+  // Text annotations state
+  const [textAnnotations, setTextAnnotations] = useState<TextAnnotation[]>([])
+  const [isPlacingText, setIsPlacingText] = useState(false)
+
   const handleNodeNamesChange = (names: string[], initialTransforms?: Record<string, NodeTransform>) => {
     setNodeNames(names)
     setNodeTransforms((prev) => {
@@ -172,6 +189,8 @@ function App() {
       setNodeTransforms({})
       setNotes([])
       setIsPlacingNote(false)
+      setTextAnnotations([])
+      setIsPlacingText(false)
     }
   }
 
@@ -184,18 +203,47 @@ function App() {
       positionY: position.y,
       positionZ: position.z,
       text: '',
+      offsetY: 0.5, // default offset 0.5 units จากพื้น
       createdAt: new Date(),
     }
     setNotes([...notes, newNote])
     setIsPlacingNote(false)
   }
 
-  const handleNoteUpdate = (id: string, text: string) => {
-    setNotes(notes.map(note => note.id === id ? { ...note, text } : note))
+  const handleNoteUpdate = (id: string, updates: Partial<NoteAnnotation>) => {
+    setNotes(notes.map(note => note.id === id ? { ...note, ...updates } : note))
   }
 
   const handleNoteDelete = (id: string) => {
     setNotes(notes.filter(note => note.id !== id))
+  }
+
+  const handleTextPlace = (position: { x: number; y: number; z: number }) => {
+    if (!isPlacingText) return
+    
+    const newTextAnnotation: TextAnnotation = {
+      id: `text-${Date.now()}`,
+      positionX: position.x,
+      positionY: position.y,
+      positionZ: position.z,
+      text: 'New Text',
+      fontSize: 16,
+      color: '#ffffff',
+      offsetY: 0.5, // default offset 0.5 units จากพื้น
+      createdAt: new Date(),
+    }
+    setTextAnnotations([...textAnnotations, newTextAnnotation])
+    setIsPlacingText(false)
+  }
+
+  const handleTextUpdate = (id: string, updates: Partial<TextAnnotation>) => {
+    setTextAnnotations(textAnnotations.map(text => 
+      text.id === id ? { ...text, ...updates } : text
+    ))
+  }
+
+  const handleTextDelete = (id: string) => {
+    setTextAnnotations(textAnnotations.filter(text => text.id !== id))
   }
 
   const handleAnimationNamesChange = (names: string[]) => {
@@ -278,8 +326,13 @@ function App() {
             notes={notes}
             isPlacingNote={isPlacingNote}
             onTogglePlaceNote={() => setIsPlacingNote(!isPlacingNote)}
-            onNoteUpdate={handleNoteUpdate}
+            onNoteUpdate={(id, updates) => handleNoteUpdate(id, updates)}
             onNoteDelete={handleNoteDelete}
+            textAnnotations={textAnnotations}
+            isPlacingText={isPlacingText}
+            onTogglePlaceText={() => setIsPlacingText(!isPlacingText)}
+            onTextUpdate={handleTextUpdate}
+            onTextDelete={handleTextDelete}
           />
           <ControlsSidebar
             modelControls={{
@@ -477,6 +530,9 @@ function App() {
               notes={notes}
               isPlacingNote={isPlacingNote}
               onNotePlace={handleNotePlace}
+              textAnnotations={textAnnotations}
+              isPlacingText={isPlacingText}
+              onTextPlace={handleTextPlace}
             />
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
               <Button

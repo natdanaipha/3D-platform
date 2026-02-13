@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
-import { ChevronLeft, ChevronRight, MapPin, Plus, Trash2, X } from 'lucide-react'
-import type { NoteAnnotation } from '../App'
+import { ChevronLeft, ChevronRight, MapPin, Plus, Trash2, X, Type } from 'lucide-react'
+import type { NoteAnnotation, TextAnnotation } from '../App'
 
 interface RightDrawerProps {
   isOpen?: boolean
@@ -10,8 +10,13 @@ interface RightDrawerProps {
   notes?: NoteAnnotation[]
   isPlacingNote?: boolean
   onTogglePlaceNote?: () => void
-  onNoteUpdate?: (id: string, text: string) => void
+  onNoteUpdate?: (id: string, updates: Partial<NoteAnnotation>) => void
   onNoteDelete?: (id: string) => void
+  textAnnotations?: TextAnnotation[]
+  isPlacingText?: boolean
+  onTogglePlaceText?: () => void
+  onTextUpdate?: (id: string, updates: Partial<TextAnnotation>) => void
+  onTextDelete?: (id: string) => void
 }
 
 export default function RightDrawer({ 
@@ -22,27 +27,58 @@ export default function RightDrawer({
   onTogglePlaceNote = () => {},
   onNoteUpdate = () => {},
   onNoteDelete = () => {},
+  textAnnotations = [],
+  isPlacingText = false,
+  onTogglePlaceText = () => {},
+  onTextUpdate = () => {},
+  onTextDelete = () => {},
 }: RightDrawerProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
-  const [editText, setEditText] = useState('')
+  const [editNote, setEditNote] = useState<Partial<NoteAnnotation>>({})
+  const [editingTextId, setEditingTextId] = useState<string | null>(null)
+  const [editTextAnnotation, setEditTextAnnotation] = useState<Partial<TextAnnotation>>({})
   const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalIsOpen
   const setIsOpen = externalSetIsOpen || setInternalIsOpen
 
   const handleStartEdit = (note: NoteAnnotation) => {
     setEditingNoteId(note.id)
-    setEditText(note.text)
+    setEditNote({
+      text: note.text,
+      offsetY: note.offsetY,
+    })
   }
 
   const handleSaveEdit = (id: string) => {
-    onNoteUpdate(id, editText)
+    onNoteUpdate(id, editNote)
     setEditingNoteId(null)
-    setEditText('')
+    setEditNote({})
   }
 
   const handleCancelEdit = () => {
     setEditingNoteId(null)
-    setEditText('')
+    setEditNote({})
+  }
+
+  const handleStartEditText = (textAnnotation: TextAnnotation) => {
+    setEditingTextId(textAnnotation.id)
+    setEditTextAnnotation({
+      text: textAnnotation.text,
+      fontSize: textAnnotation.fontSize,
+      color: textAnnotation.color,
+      offsetY: textAnnotation.offsetY,
+    })
+  }
+
+  const handleSaveTextEdit = (id: string) => {
+    onTextUpdate(id, editTextAnnotation)
+    setEditingTextId(null)
+    setEditTextAnnotation({})
+  }
+
+  const handleCancelTextEdit = () => {
+    setEditingTextId(null)
+    setEditTextAnnotation({})
   }
 
   return (
@@ -67,13 +103,17 @@ export default function RightDrawer({
         style={{ width: '370px', maxHeight: '100vh' }}
       >
         <div className="p-4">
-          <div className="space-y-4">
+          <div className="space-y-6">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Note Annotations</h2>
+              <h2 className="text-xl font-semibold">Annotations</h2>
             </div>
 
-            {/* Add Note Button */}
+            {/* Note Annotations Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium text-muted-foreground">Note Annotations</h3>
+
+              {/* Add Note Button */}
             <Button
               onClick={onTogglePlaceNote}
               className={`w-full ${isPlacingNote ? 'bg-destructive hover:bg-destructive/90' : ''}`}
@@ -132,13 +172,36 @@ export default function RightDrawer({
                       {editingNoteId === note.id ? (
                         <div className="space-y-2">
                           <textarea
-                            value={editText}
-                            onChange={(e) => setEditText(e.target.value)}
+                            value={editNote.text || ''}
+                            onChange={(e) => setEditNote({ ...editNote, text: e.target.value })}
                             className="w-full p-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
                             rows={3}
                             placeholder="Enter note text..."
                             autoFocus
                           />
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">Height from Ground (offsetY)</label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="range"
+                                min="0"
+                                max="5"
+                                step="0.1"
+                                value={editNote.offsetY !== undefined ? editNote.offsetY : 0.5}
+                                onChange={(e) => setEditNote({ ...editNote, offsetY: parseFloat(e.target.value) })}
+                                className="flex-1"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                max="10"
+                                step="0.1"
+                                value={editNote.offsetY !== undefined ? editNote.offsetY : 0.5}
+                                onChange={(e) => setEditNote({ ...editNote, offsetY: parseFloat(e.target.value) || 0 })}
+                                className="w-20 p-1.5 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                              />
+                            </div>
+                          </div>
                           <div className="flex gap-2">
                             <Button
                               size="sm"
@@ -177,12 +240,176 @@ export default function RightDrawer({
                           <div className="text-xs text-muted-foreground mt-1">
                             Position: ({note.positionX.toFixed(2)}, {note.positionY.toFixed(2)}, {note.positionZ.toFixed(2)})
                           </div>
+                          <div className="text-xs text-muted-foreground">
+                            Height: {note.offsetY.toFixed(2)} units
+                          </div>
                         </div>
                       )}
                     </div>
                   </Card>
                 ))
               )}
+              </div>
+            </div>
+
+            {/* Text Annotations Section */}
+            <div className="space-y-4 border-t pt-4">
+              <h3 className="text-sm font-medium text-muted-foreground">Text Annotations</h3>
+
+              {/* Add Text Button */}
+              <Button
+                onClick={onTogglePlaceText}
+                className={`w-full ${isPlacingText ? 'bg-destructive hover:bg-destructive/90' : ''}`}
+                variant={isPlacingText ? 'destructive' : 'default'}
+              >
+                {isPlacingText ? (
+                  <>
+                    <X className="mr-2 h-4 w-4" />
+                    Cancel Placing Text
+                  </>
+                ) : (
+                  <>
+                    <Type className="mr-2 h-4 w-4" />
+                    Add Text
+                  </>
+                )}
+              </Button>
+
+              {isPlacingText && (
+                <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-md">
+                  <p className="text-sm text-green-600 dark:text-green-400">
+                    Click on the 3D model to place a text annotation
+                  </p>
+                </div>
+              )}
+
+              {/* Text Annotations List */}
+              <div className="space-y-2">
+                {textAnnotations.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Type className="h-12 w-12 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No text annotations yet</p>
+                    <p className="text-xs mt-1">Click "Add Text" to create one</p>
+                  </div>
+                ) : (
+                  textAnnotations.map((textAnnotation) => (
+                    <Card key={textAnnotation.id} className="p-3">
+                      <div className="space-y-2">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-2">
+                            <Type className="h-4 w-4 text-primary" />
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(textAnnotation.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => onTextDelete(textAnnotation.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        
+                        {editingTextId === textAnnotation.id ? (
+                          <div className="space-y-2">
+                            <textarea
+                              value={editTextAnnotation.text || ''}
+                              onChange={(e) => setEditTextAnnotation({ ...editTextAnnotation, text: e.target.value })}
+                              className="w-full p-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                              rows={2}
+                              placeholder="Enter text..."
+                              autoFocus
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="text-xs text-muted-foreground mb-1 block">Font Size</label>
+                                <input
+                                  type="number"
+                                  min="8"
+                                  max="72"
+                                  value={editTextAnnotation.fontSize || 16}
+                                  onChange={(e) => setEditTextAnnotation({ ...editTextAnnotation, fontSize: parseInt(e.target.value) || 16 })}
+                                  className="w-full p-1.5 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs text-muted-foreground mb-1 block">Color</label>
+                                <input
+                                  type="color"
+                                  value={editTextAnnotation.color || '#ffffff'}
+                                  onChange={(e) => setEditTextAnnotation({ ...editTextAnnotation, color: e.target.value })}
+                                  className="w-full h-9 border rounded-md cursor-pointer"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-xs text-muted-foreground mb-1 block">Height from Ground (offsetY)</label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="range"
+                                  min="0"
+                                  max="5"
+                                  step="0.1"
+                                  value={editTextAnnotation.offsetY !== undefined ? editTextAnnotation.offsetY : 0.5}
+                                  onChange={(e) => setEditTextAnnotation({ ...editTextAnnotation, offsetY: parseFloat(e.target.value) })}
+                                  className="flex-1"
+                                />
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="10"
+                                  step="0.1"
+                                  value={editTextAnnotation.offsetY !== undefined ? editTextAnnotation.offsetY : 0.5}
+                                  onChange={(e) => setEditTextAnnotation({ ...editTextAnnotation, offsetY: parseFloat(e.target.value) || 0 })}
+                                  className="w-20 p-1.5 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleSaveTextEdit(textAnnotation.id)}
+                                className="flex-1"
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={handleCancelTextEdit}
+                                className="flex-1"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div 
+                              className="text-sm cursor-pointer hover:bg-accent p-2 rounded-md -m-2"
+                              onClick={() => handleStartEditText(textAnnotation)}
+                              style={{ 
+                                fontSize: `${textAnnotation.fontSize}px`,
+                                color: textAnnotation.color 
+                              }}
+                            >
+                              {textAnnotation.text}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Position: ({textAnnotation.positionX.toFixed(2)}, {textAnnotation.positionY.toFixed(2)}, {textAnnotation.positionZ.toFixed(2)})
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Size: {textAnnotation.fontSize}px | Color: <span className="inline-block w-3 h-3 rounded border border-border" style={{ backgroundColor: textAnnotation.color }}></span> | Height: {textAnnotation.offsetY.toFixed(2)} units
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
