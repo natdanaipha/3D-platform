@@ -170,7 +170,7 @@ export default function ControlsSidebar({
         className={`fixed left-0 top-0 h-full bg-card border-r border-border shadow-lg transition-transform duration-300 z-40 overflow-y-auto ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
-        style={{ width: '320px', maxHeight: '100vh' }}
+        style={{ width: '370px', maxHeight: '100vh' }}
       >
         <div className="p-4 space-y-4">
           <div className="flex items-center gap-2 mb-4">
