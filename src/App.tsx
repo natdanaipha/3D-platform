@@ -17,6 +17,15 @@ export interface NodeTransform {
   scale: number
 }
 
+export interface NoteAnnotation {
+  id: string
+  positionX: number
+  positionY: number
+  positionZ: number
+  text: string
+  createdAt: Date
+}
+
 const defaultNodeTransform = (): NodeTransform => ({
   visible: true,
   positionX: 0,
@@ -102,6 +111,10 @@ function App() {
   const [nodeNames, setNodeNames] = useState<string[]>([])
   const [nodeTransforms, setNodeTransforms] = useState<Record<string, NodeTransform>>({})
 
+  // Note annotations state
+  const [notes, setNotes] = useState<NoteAnnotation[]>([])
+  const [isPlacingNote, setIsPlacingNote] = useState(false)
+
   const handleNodeNamesChange = (names: string[], initialTransforms?: Record<string, NodeTransform>) => {
     setNodeNames(names)
     setNodeTransforms((prev) => {
@@ -157,7 +170,32 @@ function App() {
       setTextureRotation(0)
       setNodeNames([])
       setNodeTransforms({})
+      setNotes([])
+      setIsPlacingNote(false)
     }
+  }
+
+  const handleNotePlace = (position: { x: number; y: number; z: number }) => {
+    if (!isPlacingNote) return
+    
+    const newNote: NoteAnnotation = {
+      id: `note-${Date.now()}`,
+      positionX: position.x,
+      positionY: position.y,
+      positionZ: position.z,
+      text: '',
+      createdAt: new Date(),
+    }
+    setNotes([...notes, newNote])
+    setIsPlacingNote(false)
+  }
+
+  const handleNoteUpdate = (id: string, text: string) => {
+    setNotes(notes.map(note => note.id === id ? { ...note, text } : note))
+  }
+
+  const handleNoteDelete = (id: string) => {
+    setNotes(notes.filter(note => note.id !== id))
   }
 
   const handleAnimationNamesChange = (names: string[]) => {
@@ -234,7 +272,15 @@ function App() {
       {/* 3D Viewer */}
       {selectedModel && (
         <>
-          <RightDrawer isOpen={rightDrawerOpen} setIsOpen={setRightDrawerOpen} />
+          <RightDrawer 
+            isOpen={rightDrawerOpen} 
+            setIsOpen={setRightDrawerOpen}
+            notes={notes}
+            isPlacingNote={isPlacingNote}
+            onTogglePlaceNote={() => setIsPlacingNote(!isPlacingNote)}
+            onNoteUpdate={handleNoteUpdate}
+            onNoteDelete={handleNoteDelete}
+          />
           <ControlsSidebar
             modelControls={{
               positionX,
@@ -428,6 +474,9 @@ function App() {
               nodeNames={nodeNames}
               nodeTransforms={nodeTransforms}
               onNodeNamesChange={handleNodeNamesChange}
+              notes={notes}
+              isPlacingNote={isPlacingNote}
+              onNotePlace={handleNotePlace}
             />
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
               <Button

@@ -1,8 +1,8 @@
 import { Suspense, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
-import { Canvas, useFrame } from '@react-three/fiber'
-import { OrbitControls, PerspectiveCamera, Environment, Grid, useGLTF, useAnimations } from '@react-three/drei'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { OrbitControls, PerspectiveCamera, Environment, Grid, useGLTF, useAnimations, Html } from '@react-three/drei'
 import * as THREE from 'three'
-import type { NodeTransform } from '../App'
+import type { NodeTransform, NoteAnnotation } from '../App'
 
 interface ModelProps {
   url: string
@@ -455,7 +455,7 @@ const Model = forwardRef<any, ModelProps>(({
     }
   }
 
-  // Expose animation control methods
+  // Expose animation control methods and groupRef
   useImperativeHandle(ref, () => ({
     play: () => {
       if (animationMode === 'sequence' && animationSequence.length > 0) {
@@ -487,6 +487,9 @@ const Model = forwardRef<any, ModelProps>(({
       if (currentActionRef.current) {
         currentActionRef.current.reset()
       }
+    },
+    get groupRef() {
+      return groupRef.current
     },
   }))
 
@@ -710,6 +713,127 @@ interface Viewer3DProps {
   nodeNames: string[]
   nodeTransforms: Record<string, NodeTransform>
   onNodeNamesChange: (names: string[], initialTransforms?: Record<string, NodeTransform>) => void
+  // Note annotations
+  notes: NoteAnnotation[]
+  isPlacingNote: boolean
+  onNotePlace: (position: { x: number; y: number; z: number }) => void
+}
+
+// Component to render note markers in 3D space
+function NoteMarkers({ notes }: { notes: NoteAnnotation[] }) {
+  return (
+    <>
+      {notes.map((note) => (
+        <group key={note.id} position={[note.positionX, note.positionY, note.positionZ]}>
+          {/* Pin marker */}
+          <mesh>
+            <sphereGeometry args={[0.1, 16, 16]} />
+            <meshStandardMaterial color="#ef4444" emissive="#ef4444" emissiveIntensity={0.5} />
+          </mesh>
+          {/* Pin stick */}
+          <mesh position={[0, -0.15, 0]}>
+            <cylinderGeometry args={[0.02, 0.02, 0.3, 8]} />
+            <meshStandardMaterial color="#dc2626" />
+          </mesh>
+          {/* HTML label */}
+          {note.text && (
+            <Html
+              position={[0, 0.3, 0]}
+              center
+              distanceFactor={10}
+              style={{
+                pointerEvents: 'none',
+                userSelect: 'none',
+              }}
+            >
+              <div className="bg-black/80 text-white px-2 py-1 rounded text-xs max-w-[200px] break-words">
+                {note.text}
+              </div>
+            </Html>
+          )}
+        </group>
+      ))}
+    </>
+  )
+}
+
+// Component to handle click events for placing notes
+function ClickHandler({ 
+  isPlacingNote, 
+  onNotePlace,
+  modelRef 
+}: { 
+  isPlacingNote: boolean
+  onNotePlace: (position: { x: number; y: number; z: number }) => void
+  modelRef: React.RefObject<any>
+}) {
+  const { camera, gl, scene } = useThree()
+  const raycaster = useRef(new THREE.Raycaster())
+  const mouse = useRef(new THREE.Vector2())
+
+  useEffect(() => {
+    if (!isPlacingNote) {
+      gl.domElement.style.cursor = 'default'
+      return
+    }
+
+    const handleClick = (event: MouseEvent) => {
+      if (!isPlacingNote) return
+
+      const rect = gl.domElement.getBoundingClientRect()
+      mouse.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+
+      raycaster.current.setFromCamera(mouse.current, camera)
+
+      // Try to intersect with the model first
+      const modelGroup = modelRef.current?.groupRef
+      if (modelGroup) {
+        const intersects = raycaster.current.intersectObject(modelGroup, true)
+        if (intersects.length > 0) {
+          const point = intersects[0].point
+          onNotePlace({ x: point.x, y: point.y, z: point.z })
+          return
+        }
+      }
+
+      // If no model intersection, try to find model in scene
+      const allObjects: THREE.Object3D[] = []
+      scene.traverse((obj) => {
+        if (obj.type === 'Mesh' || obj.type === 'Group') {
+          allObjects.push(obj)
+        }
+      })
+      
+      if (allObjects.length > 0) {
+        const intersects = raycaster.current.intersectObjects(allObjects, true)
+        if (intersects.length > 0) {
+          const point = intersects[0].point
+          onNotePlace({ x: point.x, y: point.y, z: point.z })
+          return
+        }
+      }
+
+      // If no model intersection, intersect with a plane at y=0 (ground)
+      const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
+      const intersectPoint = new THREE.Vector3()
+      raycaster.current.ray.intersectPlane(plane, intersectPoint)
+      
+      if (intersectPoint) {
+        onNotePlace({ x: intersectPoint.x, y: intersectPoint.y, z: intersectPoint.z })
+      }
+    }
+
+    gl.domElement.addEventListener('click', handleClick)
+    gl.domElement.style.cursor = 'crosshair'
+
+    return () => {
+      gl.domElement.removeEventListener('click', handleClick)
+      gl.domElement.style.cursor = 'default'
+    }
+  }, [isPlacingNote, camera, gl, scene, onNotePlace, modelRef])
+
+  return null
 }
 
 export default function Viewer3D({
@@ -767,6 +891,9 @@ export default function Viewer3D({
   nodeNames,
   nodeTransforms,
   onNodeNamesChange,
+  notes,
+  isPlacingNote,
+  onNotePlace,
 }: Viewer3DProps) {
   const controlsRef = useRef<any>(null)
   const modelRef = useRef<any>(null)
@@ -846,6 +973,12 @@ export default function Viewer3D({
               onNodeNamesChange={onNodeNamesChange}
             />
           )}
+          <NoteMarkers notes={notes} />
+          <ClickHandler 
+            isPlacingNote={isPlacingNote} 
+            onNotePlace={onNotePlace}
+            modelRef={modelRef}
+          />
           <OrbitControls
             ref={controlsRef}
             enableDamping
