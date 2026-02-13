@@ -31,6 +31,10 @@ const defaultNodeTransform = (): NodeTransform => ({
 function App() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
 
+  // Drawer controls state
+  const [leftDrawerOpen, setLeftDrawerOpen] = useState(true)
+  const [rightDrawerOpen, setRightDrawerOpen] = useState(false)
+
   // Model controls state
   const [positionX, setPositionX] = useState(0)
   const [positionY, setPositionY] = useState(0)
@@ -230,7 +234,7 @@ function App() {
       {/* 3D Viewer */}
       {selectedModel && (
         <>
-          <RightDrawer />
+          <RightDrawer isOpen={rightDrawerOpen} setIsOpen={setRightDrawerOpen} />
           <ControlsSidebar
             modelControls={{
               positionX,
@@ -350,8 +354,25 @@ function App() {
               nodeTransforms,
               updateNodeTransform,
             }}
+            isOpen={leftDrawerOpen}
+            setIsOpen={setLeftDrawerOpen}
           />
-          <div className="flex-1 relative" id="viewer-3d">
+          <div 
+            className="flex-1 relative" 
+            id="viewer-3d"
+            onDoubleClick={(e) => {
+              // ปิด drawer ทั้งสองเมื่อ double click นอก drawer
+              const target = e.target as HTMLElement
+              // ตรวจสอบว่าไม่ได้ click บน drawer หรือ toggle button โดยใช้ data attribute
+              if (
+                !target.closest('[data-drawer]') && // ไม่ได้ click บน drawer
+                !target.closest('[data-drawer-toggle]') // ไม่ได้ click บน toggle button
+              ) {
+                setLeftDrawerOpen(false)
+                setRightDrawerOpen(false)
+              }
+            }}
+          >
             <Viewer3D
               modelUrl={selectedModel}
               positionX={positionX}

@@ -257,6 +257,8 @@ interface ControlsSidebarProps {
     nodeTransforms: Record<string, NodeTransform>
     updateNodeTransform: (nodeName: string, patch: Partial<NodeTransform>) => void
   }
+  isOpen?: boolean
+  setIsOpen?: (open: boolean) => void
 }
 
 export default function ControlsSidebar({
@@ -269,8 +271,12 @@ export default function ControlsSidebar({
   materialControls,
   textureControls,
   nodeControls,
+  isOpen: externalIsOpen,
+  setIsOpen: externalSetIsOpen,
 }: ControlsSidebarProps) {
-  const [isOpen, setIsOpen] = useState(true)
+  const [internalIsOpen, setInternalIsOpen] = useState(true)
+  const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalIsOpen
+  const setIsOpen = externalSetIsOpen || setInternalIsOpen
   const [activeSection, setActiveSection] = useState<string | null>(null)
 
   const toggleSection = (section: string) => {
@@ -285,12 +291,14 @@ export default function ControlsSidebar({
         className="fixed left-0 top-1/2 -translate-y-1/2 z-50 rounded-l-none rounded-r-lg"
         variant="secondary"
         size="icon"
+        data-drawer-toggle="left"
       >
         {isOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
       </Button>
 
       {/* Sidebar */}
       <div
+        data-drawer="left"
         className={`fixed left-0 top-0 h-full bg-card border-r border-border shadow-lg transition-transform duration-300 z-40 overflow-y-auto ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
