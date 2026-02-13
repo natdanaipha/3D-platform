@@ -2,6 +2,7 @@ import { Suspense, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera, Environment, Grid, useGLTF, useAnimations } from '@react-three/drei'
 import * as THREE from 'three'
+import type { NodeTransform } from '../App'
 
 interface ModelProps {
   url: string
@@ -42,18 +43,10 @@ interface ModelProps {
   textureOffsetY: number
   textureRotation: number
   onTextureNamesChange: (names: string[]) => void
-  // Nodes controls
+  // Nodes controls (per-node transforms)
   nodeNames: string[]
-  selectedNode: string
-  nodeVisible: boolean
-  nodePositionX: number
-  nodePositionY: number
-  nodePositionZ: number
-  nodeRotationX: number
-  nodeRotationY: number
-  nodeRotationZ: number
-  nodeScale: number
-  onNodeNamesChange: (names: string[]) => void
+  nodeTransforms: Record<string, NodeTransform>
+  onNodeNamesChange: (names: string[], initialTransforms?: Record<string, NodeTransform>) => void
 }
 
 // Component to load and display GLB model
@@ -94,15 +87,7 @@ const Model = forwardRef<any, ModelProps>(({
   textureRotation,
   onTextureNamesChange,
   nodeNames: _nodeNames,
-  selectedNode,
-  nodeVisible,
-  nodePositionX,
-  nodePositionY,
-  nodePositionZ,
-  nodeRotationX,
-  nodeRotationY,
-  nodeRotationZ,
-  nodeScale,
+  nodeTransforms,
   onNodeNamesChange,
 }, ref) => {
   const { scene, animations } = useGLTF(url)
@@ -125,6 +110,7 @@ const Model = forwardRef<any, ModelProps>(({
     const materials: string[] = []
     const textures: string[] = []
     const nodes: string[] = []
+    const initialNodeTransforms: Record<string, NodeTransform> = {}
 
     traverseScene(scene, (obj) => {
       // Collect skeletons
@@ -172,16 +158,30 @@ const Model = forwardRef<any, ModelProps>(({
         })
       }
 
-      // Collect nodes (meshes, groups, etc.)
+      // Collect nodes (meshes, groups, etc.) and read current transform from scene
       if (obj.name && !nodes.includes(obj.name)) {
         nodes.push(obj.name)
+      }
+      if (obj.name) {
+        const s = obj.scale
+        const scaleVal = (s.x + s.y + s.z) / 3
+        initialNodeTransforms[obj.name] = {
+          visible: obj.visible,
+          positionX: obj.position.x,
+          positionY: obj.position.y,
+          positionZ: obj.position.z,
+          rotationX: obj.rotation.x,
+          rotationY: obj.rotation.y,
+          rotationZ: obj.rotation.z,
+          scale: scaleVal,
+        }
       }
     })
 
     onSkeletonNamesChange(skeletons)
     onMaterialNamesChange(materials)
     onTextureNamesChange(textures)
-    onNodeNamesChange(nodes)
+    onNodeNamesChange(nodes, initialNodeTransforms)
   }, [scene, onSkeletonNamesChange, onMaterialNamesChange, onTextureNamesChange, onNodeNamesChange])
 
   // Control skeleton visibility
@@ -288,23 +288,25 @@ const Model = forwardRef<any, ModelProps>(({
     })
   }, [scene, selectedTexture, textureScaleX, textureScaleY, textureOffsetX, textureOffsetY, textureRotation])
 
-  // Control nodes
+  // Control nodes (apply per-node transforms)
   useEffect(() => {
-    if (!scene || !selectedNode) return
+    if (!scene || !nodeTransforms) return
 
-    traverseScene(scene, (obj) => {
-      if (obj.name === selectedNode) {
-        obj.visible = nodeVisible
-        obj.position.set(nodePositionX, nodePositionY, nodePositionZ)
-        obj.rotation.set(nodeRotationX, nodeRotationY, nodeRotationZ)
-        obj.scale.set(nodeScale, nodeScale, nodeScale)
-      }
+    Object.entries(nodeTransforms).forEach(([nodeName, t]: [string, NodeTransform]) => {
+      traverseScene(scene, (obj) => {
+        if (obj.name === nodeName) {
+          obj.visible = t.visible
+          obj.position.set(t.positionX, t.positionY, t.positionZ)
+          obj.rotation.set(t.rotationX, t.rotationY, t.rotationZ)
+          obj.scale.set(t.scale, t.scale, t.scale)
+        }
+      })
     })
-  }, [scene, selectedNode, nodeVisible, nodePositionX, nodePositionY, nodePositionZ, nodeRotationX, nodeRotationY, nodeRotationZ, nodeScale])
+  }, [scene, nodeTransforms])
 
   console.log("animations : ", animations);
-  console.log('actions : ', actions);
-  console.log("mixer : ", mixer);
+  // console.log('actions : ', actions);
+  // console.log("mixer : ", mixer);
   
   // Get animation names
   const animationNames = animations.map((clip) => clip.name)
@@ -507,18 +509,10 @@ interface Viewer3DProps {
   textureOffsetY: number
   textureRotation: number
   onTextureNamesChange: (names: string[]) => void
-  // Nodes controls
+  // Nodes controls (per-node transforms)
   nodeNames: string[]
-  selectedNode: string
-  nodeVisible: boolean
-  nodePositionX: number
-  nodePositionY: number
-  nodePositionZ: number
-  nodeRotationX: number
-  nodeRotationY: number
-  nodeRotationZ: number
-  nodeScale: number
-  onNodeNamesChange: (names: string[]) => void
+  nodeTransforms: Record<string, NodeTransform>
+  onNodeNamesChange: (names: string[], initialTransforms?: Record<string, NodeTransform>) => void
 }
 
 export default function Viewer3D({
@@ -571,15 +565,7 @@ export default function Viewer3D({
   textureRotation,
   onTextureNamesChange,
   nodeNames,
-  selectedNode,
-  nodeVisible,
-  nodePositionX,
-  nodePositionY,
-  nodePositionZ,
-  nodeRotationX,
-  nodeRotationY,
-  nodeRotationZ,
-  nodeScale,
+  nodeTransforms,
   onNodeNamesChange,
 }: Viewer3DProps) {
   const controlsRef = useRef<any>(null)
@@ -653,15 +639,7 @@ export default function Viewer3D({
               textureRotation={textureRotation}
               onTextureNamesChange={onTextureNamesChange}
               nodeNames={nodeNames}
-              selectedNode={selectedNode}
-              nodeVisible={nodeVisible}
-              nodePositionX={nodePositionX}
-              nodePositionY={nodePositionY}
-              nodePositionZ={nodePositionZ}
-              nodeRotationX={nodeRotationX}
-              nodeRotationY={nodeRotationY}
-              nodeRotationZ={nodeRotationZ}
-              nodeScale={nodeScale}
+              nodeTransforms={nodeTransforms}
               onNodeNamesChange={onNodeNamesChange}
             />
           )}

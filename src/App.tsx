@@ -5,6 +5,28 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './com
 import { Button } from './components/ui/button'
 import { Upload } from 'lucide-react'
 
+export interface NodeTransform {
+  visible: boolean
+  positionX: number
+  positionY: number
+  positionZ: number
+  rotationX: number
+  rotationY: number
+  rotationZ: number
+  scale: number
+}
+
+const defaultNodeTransform = (): NodeTransform => ({
+  visible: true,
+  positionX: 0,
+  positionY: 0,
+  positionZ: 0,
+  rotationX: 0,
+  rotationY: 0,
+  rotationZ: 0,
+  scale: 1,
+})
+
 function App() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
 
@@ -68,17 +90,27 @@ function App() {
   const [textureOffsetY, setTextureOffsetY] = useState(0)
   const [textureRotation, setTextureRotation] = useState(0)
 
-  // Nodes controls state
+  // Nodes controls state (per-node transforms)
   const [nodeNames, setNodeNames] = useState<string[]>([])
-  const [selectedNode, setSelectedNode] = useState('')
-  const [nodeVisible, setNodeVisible] = useState(true)
-  const [nodePositionX, setNodePositionX] = useState(0)
-  const [nodePositionY, setNodePositionY] = useState(0)
-  const [nodePositionZ, setNodePositionZ] = useState(0)
-  const [nodeRotationX, setNodeRotationX] = useState(0)
-  const [nodeRotationY, setNodeRotationY] = useState(0)
-  const [nodeRotationZ, setNodeRotationZ] = useState(0)
-  const [nodeScale, setNodeScale] = useState(1)
+  const [nodeTransforms, setNodeTransforms] = useState<Record<string, NodeTransform>>({})
+
+  const handleNodeNamesChange = (names: string[], initialTransforms?: Record<string, NodeTransform>) => {
+    setNodeNames(names)
+    setNodeTransforms((prev) => {
+      const next = { ...prev }
+      names.forEach((n) => {
+        if (!next[n]) next[n] = initialTransforms?.[n] ?? defaultNodeTransform()
+      })
+      return next
+    })
+  }
+
+  const updateNodeTransform = (nodeName: string, patch: Partial<NodeTransform>) => {
+    setNodeTransforms((prev) => ({
+      ...prev,
+      [nodeName]: { ...defaultNodeTransform(), ...prev[nodeName], ...patch },
+    }))
+  }
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -112,15 +144,8 @@ function App() {
       setTextureOffsetX(0)
       setTextureOffsetY(0)
       setTextureRotation(0)
-      setSelectedNode('')
-      setNodeVisible(true)
-      setNodePositionX(0)
-      setNodePositionY(0)
-      setNodePositionZ(0)
-      setNodeRotationX(0)
-      setNodeRotationY(0)
-      setNodeRotationZ(0)
-      setNodeScale(1)
+      setNodeNames([])
+      setNodeTransforms({})
     }
   }
 
@@ -308,25 +333,8 @@ function App() {
             }}
             nodeControls={{
               nodeNames,
-              selectedNode,
-              nodeVisible,
-              nodePositionX,
-              nodePositionY,
-              nodePositionZ,
-              nodeRotationX,
-              nodeRotationY,
-              nodeRotationZ,
-              nodeScale,
-              setNodeNames,
-              setSelectedNode,
-              setNodeVisible,
-              setNodePositionX,
-              setNodePositionY,
-              setNodePositionZ,
-              setNodeRotationX,
-              setNodeRotationY,
-              setNodeRotationZ,
-              setNodeScale,
+              nodeTransforms,
+              updateNodeTransform,
             }}
           />
           <div className="flex-1 relative" id="viewer-3d">
@@ -380,16 +388,8 @@ function App() {
               textureRotation={textureRotation}
               onTextureNamesChange={setTextureNames}
               nodeNames={nodeNames}
-              selectedNode={selectedNode}
-              nodeVisible={nodeVisible}
-              nodePositionX={nodePositionX}
-              nodePositionY={nodePositionY}
-              nodePositionZ={nodePositionZ}
-              nodeRotationX={nodeRotationX}
-              nodeRotationY={nodeRotationY}
-              nodeRotationZ={nodeRotationZ}
-              nodeScale={nodeScale}
-              onNodeNamesChange={setNodeNames}
+              nodeTransforms={nodeTransforms}
+              onNodeNamesChange={handleNodeNamesChange}
             />
             <div className="absolute top-4 right-4 z-10 flex items-center gap-2">
               <Button

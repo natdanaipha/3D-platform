@@ -1,7 +1,142 @@
 import { useState } from 'react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-import { ChevronLeft, ChevronRight, Settings } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Settings, ChevronDown, ChevronUp } from 'lucide-react'
+import type { NodeTransform } from '../App'
+
+function NodeCard({
+  nodeName,
+  transform: t,
+  onUpdate,
+}: {
+  nodeName: string
+  transform: NodeTransform
+  onUpdate: (patch: Partial<NodeTransform>) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <Card className="border-muted/50">
+      <CardHeader
+        className="cursor-pointer py-3 px-4"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        <CardTitle className="text-xs flex items-center justify-between gap-2 font-medium">
+          <span className="truncate" title={nodeName}>{nodeName}</span>
+          <span className="shrink-0">{expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}</span>
+        </CardTitle>
+      </CardHeader>
+      {expanded && (
+        <CardContent className="pt-0 pb-3 px-4 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id={`node-visible-${nodeName}`}
+              checked={t.visible}
+              onChange={(e) => onUpdate({ visible: e.target.checked })}
+              className="rounded"
+            />
+            <label htmlFor={`node-visible-${nodeName}`} className="text-xs">Visible</label>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <div>
+              <label className="text-xs text-muted-foreground">Pos X</label>
+              <input
+                type="range"
+                min="-10"
+                max="10"
+                step="0.1"
+                value={t.positionX}
+                onChange={(e) => onUpdate({ positionX: parseFloat(e.target.value) })}
+                className="w-full h-2"
+              />
+              <span className="text-[10px]">{t.positionX.toFixed(1)}</span>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Pos Y</label>
+              <input
+                type="range"
+                min="-10"
+                max="10"
+                step="0.1"
+                value={t.positionY}
+                onChange={(e) => onUpdate({ positionY: parseFloat(e.target.value) })}
+                className="w-full h-2"
+              />
+              <span className="text-[10px]">{t.positionY.toFixed(1)}</span>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Pos Z</label>
+              <input
+                type="range"
+                min="-10"
+                max="10"
+                step="0.1"
+                value={t.positionZ}
+                onChange={(e) => onUpdate({ positionZ: parseFloat(e.target.value) })}
+                className="w-full h-2"
+              />
+              <span className="text-[10px]">{t.positionZ.toFixed(1)}</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <div>
+              <label className="text-xs text-muted-foreground">Rot X</label>
+              <input
+                type="range"
+                min="-3.14"
+                max="3.14"
+                step="0.1"
+                value={t.rotationX}
+                onChange={(e) => onUpdate({ rotationX: parseFloat(e.target.value) })}
+                className="w-full h-2"
+              />
+              <span className="text-[10px]">{t.rotationX.toFixed(2)}</span>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Rot Y</label>
+              <input
+                type="range"
+                min="-3.14"
+                max="3.14"
+                step="0.1"
+                value={t.rotationY}
+                onChange={(e) => onUpdate({ rotationY: parseFloat(e.target.value) })}
+                className="w-full h-2"
+              />
+              <span className="text-[10px]">{t.rotationY.toFixed(2)}</span>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Rot Z</label>
+              <input
+                type="range"
+                min="-3.14"
+                max="3.14"
+                step="0.1"
+                value={t.rotationZ}
+                onChange={(e) => onUpdate({ rotationZ: parseFloat(e.target.value) })}
+                className="w-full h-2"
+              />
+              <span className="text-[10px]">{t.rotationZ.toFixed(2)}</span>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground">Scale</label>
+            <input
+              type="range"
+              min="0.1"
+              max="5"
+              step="0.1"
+              value={t.scale}
+              onChange={(e) => onUpdate({ scale: parseFloat(e.target.value) })}
+              className="w-full h-2"
+            />
+            <span className="text-[10px]">{t.scale.toFixed(1)}</span>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  )
+}
 
 interface ControlsSidebarProps {
   modelControls: {
@@ -113,25 +248,8 @@ interface ControlsSidebarProps {
   }
   nodeControls: {
     nodeNames: string[]
-    selectedNode: string
-    nodeVisible: boolean
-    nodePositionX: number
-    nodePositionY: number
-    nodePositionZ: number
-    nodeRotationX: number
-    nodeRotationY: number
-    nodeRotationZ: number
-    nodeScale: number
-    setNodeNames: (v: string[]) => void
-    setSelectedNode: (v: string) => void
-    setNodeVisible: (v: boolean) => void
-    setNodePositionX: (v: number) => void
-    setNodePositionY: (v: number) => void
-    setNodePositionZ: (v: number) => void
-    setNodeRotationX: (v: number) => void
-    setNodeRotationY: (v: number) => void
-    setNodeRotationZ: (v: number) => void
-    setNodeScale: (v: number) => void
+    nodeTransforms: Record<string, NodeTransform>
+    updateNodeTransform: (nodeName: string, patch: Partial<NodeTransform>) => void
   }
 }
 
@@ -147,7 +265,7 @@ export default function ControlsSidebar({
   nodeControls,
 }: ControlsSidebarProps) {
   const [isOpen, setIsOpen] = useState(true)
-  const [activeSection, setActiveSection] = useState<string | null>('model')
+  const [activeSection, setActiveSection] = useState<string | null>(null)
 
   const toggleSection = (section: string) => {
     setActiveSection(activeSection === section ? null : section)
@@ -854,7 +972,7 @@ export default function ControlsSidebar({
             </Card>
           )}
 
-          {/* Nodes Controls */}
+          {/* Nodes Controls - Card list per node */}
           {nodeControls.nodeNames.length > 0 && (
             <Card>
               <CardHeader
@@ -868,124 +986,20 @@ export default function ControlsSidebar({
               </CardHeader>
               {activeSection === 'nodes' && (
                 <CardContent className="space-y-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground">Node</label>
-                    <select
-                      value={nodeControls.selectedNode}
-                      onChange={(e) => nodeControls.setSelectedNode(e.target.value)}
-                      className="w-full p-2 border rounded text-sm"
-                    >
-                      <option value="">Select Node</option>
-                      {nodeControls.nodeNames.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="space-y-2 pr-1">
+                    {nodeControls.nodeNames.map((nodeName) => {
+                      const t = nodeControls.nodeTransforms[nodeName]
+                      if (!t) return null
+                      return (
+                        <NodeCard
+                          key={nodeName}
+                          nodeName={nodeName}
+                          transform={t}
+                          onUpdate={(patch) => nodeControls.updateNodeTransform(nodeName, patch)}
+                        />
+                      )
+                    })}
                   </div>
-                  {nodeControls.selectedNode && (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={nodeControls.nodeVisible}
-                          onChange={(e) => nodeControls.setNodeVisible(e.target.checked)}
-                        />
-                        <label className="text-xs">Visible</label>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Position X</label>
-                        <input
-                          type="range"
-                          min="-10"
-                          max="10"
-                          step="0.1"
-                          value={nodeControls.nodePositionX}
-                          onChange={(e) => nodeControls.setNodePositionX(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <span className="text-xs">{nodeControls.nodePositionX.toFixed(1)}</span>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Position Y</label>
-                        <input
-                          type="range"
-                          min="-10"
-                          max="10"
-                          step="0.1"
-                          value={nodeControls.nodePositionY}
-                          onChange={(e) => nodeControls.setNodePositionY(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <span className="text-xs">{nodeControls.nodePositionY.toFixed(1)}</span>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Position Z</label>
-                        <input
-                          type="range"
-                          min="-10"
-                          max="10"
-                          step="0.1"
-                          value={nodeControls.nodePositionZ}
-                          onChange={(e) => nodeControls.setNodePositionZ(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <span className="text-xs">{nodeControls.nodePositionZ.toFixed(1)}</span>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Rotation X</label>
-                        <input
-                          type="range"
-                          min="-3.14"
-                          max="3.14"
-                          step="0.1"
-                          value={nodeControls.nodeRotationX}
-                          onChange={(e) => nodeControls.setNodeRotationX(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <span className="text-xs">{nodeControls.nodeRotationX.toFixed(2)}</span>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Rotation Y</label>
-                        <input
-                          type="range"
-                          min="-3.14"
-                          max="3.14"
-                          step="0.1"
-                          value={nodeControls.nodeRotationY}
-                          onChange={(e) => nodeControls.setNodeRotationY(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <span className="text-xs">{nodeControls.nodeRotationY.toFixed(2)}</span>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Rotation Z</label>
-                        <input
-                          type="range"
-                          min="-3.14"
-                          max="3.14"
-                          step="0.1"
-                          value={nodeControls.nodeRotationZ}
-                          onChange={(e) => nodeControls.setNodeRotationZ(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <span className="text-xs">{nodeControls.nodeRotationZ.toFixed(2)}</span>
-                      </div>
-                      <div>
-                        <label className="text-xs text-muted-foreground">Scale</label>
-                        <input
-                          type="range"
-                          min="0.1"
-                          max="5"
-                          step="0.1"
-                          value={nodeControls.nodeScale}
-                          onChange={(e) => nodeControls.setNodeScale(parseFloat(e.target.value))}
-                          className="w-full"
-                        />
-                        <span className="text-xs">{nodeControls.nodeScale.toFixed(1)}</span>
-                      </div>
-                    </>
-                  )}
                 </CardContent>
               )}
             </Card>
