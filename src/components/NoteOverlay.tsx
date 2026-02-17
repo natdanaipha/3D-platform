@@ -13,7 +13,7 @@ const NOTE_COLOR = '#ef4444'
 
 export default function NoteOverlay({
   notes,
-  onNoteUpdate,
+  onNoteUpdate: _onNoteUpdate,
   onNoteDelete,
   onNoteEdit,
 }: NoteOverlayProps) {
