@@ -3,6 +3,8 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera, Environment, Grid, useGLTF, useAnimations, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import type { NodeTransform, NoteAnnotation, TextAnnotation } from '../App'
+import NoteMarker3D from './NoteMarker3D'
+import NoteOverlay from './NoteOverlay'
 
 interface ModelProps {
   url: string
@@ -717,79 +719,27 @@ interface Viewer3DProps {
   notes: NoteAnnotation[]
   isPlacingNote: boolean
   onNotePlace: (position: { x: number; y: number; z: number }) => void
+  onNoteUpdate: (id: string, updates: Partial<NoteAnnotation>) => void
+  onNoteDelete: (id: string) => void
+  onNoteEdit?: (id: string) => void
   // Text annotations
   textAnnotations: TextAnnotation[]
   isPlacingText: boolean
   onTextPlace: (position: { x: number; y: number; z: number }) => void
 }
 
-// Component to render note markers in 3D space
-function NoteMarkers({ notes }: { notes: NoteAnnotation[] }) {
-  return (
-    <>
-      {notes.map((note) => {
-        const offsetY = note.offsetY || 0
-        const labelHeight = 0.3 // ความสูงของ label จากจุดบนสุดของเส้น
-        const topY = offsetY + labelHeight
-        const bottomY = 0 // ตำแหน่งพื้น (relative to note.positionY)
-        
-        // สร้างเส้นจากพื้นไปยังตำแหน่ง label
-        const linePoints = [
-          new THREE.Vector3(0, bottomY, 0),
-          new THREE.Vector3(0, topY, 0),
-        ]
-        const lineGeometry = new THREE.BufferGeometry().setFromPoints(linePoints)
-
-        return (
-          <group 
-            key={note.id} 
-            position={[
-              note.positionX, 
-              note.positionY, 
-              note.positionZ
-            ]}
-          >
-            {/* เส้นที่ลากจากพื้นไปยัง label */}
-            <line geometry={lineGeometry}>
-              <lineBasicMaterial 
-                color="#ef4444" 
-                linewidth={2}
-                transparent
-                opacity={0.8}
-              />
-            </line>
-            
-            {/* จุดที่ปลายบนสุดของเส้น */}
-            <mesh position={[0, topY, 0]}>
-              <sphereGeometry args={[0.08, 16, 16]} />
-              <meshStandardMaterial 
-                color="#ef4444" 
-                emissive="#ef4444" 
-                emissiveIntensity={0.5} 
-              />
-            </mesh>
-
-            {/* HTML label */}
-            {note.text && (
-              <Html
-                position={[0, topY + 0.15, 0]}
-                center
-                distanceFactor={10}
-                style={{
-                  pointerEvents: 'none',
-                  userSelect: 'none',
-                }}
-              >
-                <div className="bg-black/80 text-white px-2 py-1 rounded text-xs max-w-[200px] break-words">
-                  {note.text}
-                </div>
-              </Html>
-            )}
-          </group>
-        )
-      })}
-    </>
-  )
+// Emit canvas bounds for overlay (screen position calculation)
+function CanvasInfoEmitter() {
+  const { gl } = useThree()
+  useFrame(() => {
+    if (gl?.domElement) {
+      const rect = gl.domElement.getBoundingClientRect()
+      window.dispatchEvent(
+        new CustomEvent('canvasInfo', { detail: { left: rect.left, top: rect.top } })
+      )
+    }
+  })
+  return null
 }
 
 // Component to render text annotations in 3D space
@@ -986,6 +936,9 @@ export default function Viewer3D({
   notes,
   isPlacingNote,
   onNotePlace,
+  onNoteUpdate,
+  onNoteDelete,
+  onNoteEdit,
   textAnnotations,
   isPlacingText,
   onTextPlace,
@@ -1002,6 +955,12 @@ export default function Viewer3D({
 
   return (
     <div className="w-full h-screen relative">
+      <NoteOverlay
+        notes={notes}
+        onNoteUpdate={onNoteUpdate}
+        onNoteDelete={onNoteDelete}
+        onNoteEdit={onNoteEdit}
+      />
       <Canvas shadows>
         <SceneBackground backgroundColor={backgroundColor} />
         <Suspense fallback={null}>
@@ -1068,7 +1027,10 @@ export default function Viewer3D({
               onNodeNamesChange={onNodeNamesChange}
             />
           )}
-          <NoteMarkers notes={notes} />
+          <CanvasInfoEmitter />
+          {notes.map((note) => (
+            <NoteMarker3D key={note.id} note={note} />
+          ))}
           <TextAnnotations textAnnotations={textAnnotations} />
           <ClickHandler 
             isPlacingNote={isPlacingNote} 
@@ -1090,3 +1052,4 @@ export default function Viewer3D({
     </div>
   )
 }
+

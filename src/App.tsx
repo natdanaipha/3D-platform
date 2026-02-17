@@ -195,6 +195,7 @@ function App() {
   }
 
   const handleNotePlace = (position: { x: number; y: number; z: number }) => {
+    
     if (!isPlacingNote) return
     
     const newNote: NoteAnnotation = {
@@ -530,6 +531,9 @@ function App() {
               notes={notes}
               isPlacingNote={isPlacingNote}
               onNotePlace={handleNotePlace}
+              onNoteUpdate={handleNoteUpdate}
+              onNoteDelete={handleNoteDelete}
+              onNoteEdit={() => setRightDrawerOpen(true)}
               textAnnotations={textAnnotations}
               isPlacingText={isPlacingText}
               onTextPlace={handleTextPlace}
