@@ -2,9 +2,9 @@ import { Suspense, useRef, useEffect, forwardRef, useImperativeHandle } from 're
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera, Environment, Grid, useGLTF, useAnimations, Html } from '@react-three/drei'
 import * as THREE from 'three'
-import type { NodeTransform, NoteAnnotation, TextAnnotation } from '../App'
-import NoteMarker3D from './NoteMarker3D'
-import NoteOverlay from './NoteOverlay'
+import type { NodeTransform, NoteAnnotation, TextAnnotation } from '../types'
+import NoteMarker3D from './annotations/NoteMarker3D'
+import NoteOverlay from './annotations/NoteOverlay'
 
 interface ModelProps {
   url: string
@@ -52,6 +52,8 @@ interface ModelProps {
   nodeNames: string[]
   nodeTransforms: Record<string, NodeTransform>
   onNodeNamesChange: (names: string[], initialTransforms?: Record<string, NodeTransform>) => void
+  /** เมื่อมีค่า โหนดนี้และลูกจะแสดงสีปกติ ส่วนอื่นเป็นสีเทา */
+  highlightedNodeName: string | null
 }
 
 // Component to load and display GLB model
@@ -97,6 +99,7 @@ const Model = forwardRef<any, ModelProps>(({
   nodeNames: _nodeNames,
   nodeTransforms,
   onNodeNamesChange,
+  highlightedNodeName,
 }, ref) => {
   const { scene, animations } = useGLTF(url)
   const groupRef = useRef<THREE.Group>(null)
@@ -106,6 +109,7 @@ const Model = forwardRef<any, ModelProps>(({
   const sequenceIndexRef = useRef<number>(0)
   const isPlayingSequenceRef = useRef<boolean>(false)
   const materialTexturesRef = useRef<Record<string, THREE.Texture>>({})
+  const grayMaterialRestoreRef = useRef<Map<THREE.Mesh, { material: THREE.Material | THREE.Material[]; geometry?: THREE.BufferGeometry }>>(new Map())
   
   // Helper function to traverse scene and collect data
   const traverseScene = (object: THREE.Object3D, callback: (obj: THREE.Object3D) => void) => {
@@ -242,6 +246,10 @@ const Model = forwardRef<any, ModelProps>(({
     }
   }, [scene, selectedSkeleton, showSkeletonHelper])
 
+  // ใช้เช็คข้าม mesh ที่ถูกเทาไว้โดย Part Names highlight (ไม่ให้ material effect เขียนทับ)
+  const isGrayedMesh = (obj: THREE.Object3D) =>
+    (obj as THREE.Mesh).isMesh && grayMaterialRestoreRef.current.has(obj as THREE.Mesh)
+
   // Control materials
   useEffect(() => {
     if (!scene || !selectedMaterial) return
@@ -307,10 +315,10 @@ const Model = forwardRef<any, ModelProps>(({
           materialTexturesRef.current[selectedMaterial] = texture
 
           traverseScene(scene, (obj) => {
+            if (isGrayedMesh(obj)) return
             if ((obj as any).material) {
               const material = (obj as any).material
               const materialsArray = Array.isArray(material) ? material : [material]
-              
               materialsArray.forEach((mat: any) => {
                 if (mat.name === selectedMaterial) {
                   applyMaterialProperties(mat, texture)
@@ -322,12 +330,11 @@ const Model = forwardRef<any, ModelProps>(({
         undefined,
         (error) => {
           console.error('Error loading texture:', error)
-          // On error, apply properties without texture
           traverseScene(scene, (obj) => {
+            if (isGrayedMesh(obj)) return
             if ((obj as any).material) {
               const material = (obj as any).material
               const materialsArray = Array.isArray(material) ? material : [material]
-              
               materialsArray.forEach((mat: any) => {
                 if (mat.name === selectedMaterial) {
                   applyMaterialProperties(mat, null)
@@ -338,12 +345,11 @@ const Model = forwardRef<any, ModelProps>(({
         }
       )
     } else {
-      // No texture, use color instead
       traverseScene(scene, (obj) => {
+        if (isGrayedMesh(obj)) return
         if ((obj as any).material) {
           const material = (obj as any).material
           const materialsArray = Array.isArray(material) ? material : [material]
-          
           materialsArray.forEach((mat: any) => {
             if (mat.name === selectedMaterial) {
               applyMaterialProperties(mat, null)
@@ -377,10 +383,10 @@ const Model = forwardRef<any, ModelProps>(({
     if (!scene || !selectedTexture) return
 
     traverseScene(scene, (obj) => {
+      if (isGrayedMesh(obj)) return
       if ((obj as any).material) {
         const material = (obj as any).material
         const materialsArray = Array.isArray(material) ? material : [material]
-        
         materialsArray.forEach((mat: any) => {
           if (mat.map && mat.map.name === selectedTexture) {
             mat.map.repeat.set(textureScaleX, textureScaleY)
@@ -408,6 +414,142 @@ const Model = forwardRef<any, ModelProps>(({
       })
     })
   }, [scene, nodeTransforms])
+
+  // Highlight one node: โหนดที่เลือกมีสีเดิม ส่วนอื่นเป็นสีเทา
+  useEffect(() => {
+    if (!scene) return
+
+    const restoreGrayed = () => {
+      grayMaterialRestoreRef.current.forEach((stored, mesh) => {
+        if (mesh && stored) {
+          mesh.material = stored.material
+          if (stored.geometry) {
+            if (mesh.geometry?.dispose) mesh.geometry.dispose()
+            mesh.geometry = stored.geometry
+          }
+        }
+      })
+      grayMaterialRestoreRef.current.clear()
+    }
+
+    restoreGrayed()
+
+    if (!highlightedNodeName) return
+
+    const highlightedMeshes = new Set<THREE.Mesh>()
+    // หาโหนดที่เลือก (รองรับทั้งที่ชื่ออยู่บน Mesh เอง หรือบน Group ที่มี Mesh ข้างใน)
+    let highlightRoot: THREE.Object3D | undefined
+    scene.traverse((obj) => {
+      if (obj.name === highlightedNodeName) {
+        highlightRoot = obj
+      }
+    })
+    if (!highlightRoot) {
+      highlightRoot = scene.getObjectByName(highlightedNodeName) || undefined
+    }
+    if (highlightRoot) {
+      highlightRoot.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          highlightedMeshes.add(obj as THREE.Mesh)
+        }
+      })
+    }
+
+    // โหนดที่เลือกไม่มี mesh — ลองว่าเป็น Bone ของ SkinnedMesh หรือไม่ (เช่น เท้า ขวา)
+    if (highlightedMeshes.size === 0 && highlightRoot) {
+      let boneIndex = -1
+      let skeleton: THREE.Skeleton | null = null
+      scene.traverse((obj) => {
+        const skinned = obj as THREE.SkinnedMesh
+        if (skinned.isSkinnedMesh && skinned.skeleton) {
+          const bones = skinned.skeleton.bones
+          const idx = bones.findIndex((b: THREE.Bone) => b === highlightRoot || b.name === highlightedNodeName)
+          if (idx >= 0) {
+            boneIndex = idx
+            skeleton = skinned.skeleton
+          }
+        }
+      })
+      if (boneIndex >= 0 && skeleton) {
+        scene.traverse((obj) => {
+          const mesh = obj as THREE.SkinnedMesh
+          if (!mesh.isSkinnedMesh || mesh.skeleton !== skeleton) return
+          const geom = mesh.geometry
+          const skinIndex = geom.getAttribute('skinIndex') as THREE.BufferAttribute
+          const skinWeight = geom.getAttribute('skinWeight') as THREE.BufferAttribute
+          if (!skinIndex || !skinWeight) return
+          const count = geom.getAttribute('position').count
+          const highlightWeight = new Float32Array(count)
+          for (let i = 0; i < count; i++) {
+            let w = 0
+            for (let c = 0; c < 4; c++) {
+              const idx = skinIndex.getComponent(i, c)
+              if (idx === boneIndex) w += skinWeight.getComponent(i, c)
+            }
+            highlightWeight[i] = w
+          }
+          const geomClone = geom.clone()
+          geomClone.setAttribute('highlightWeight', new THREE.BufferAttribute(highlightWeight, 1))
+          const originalMat = mesh.material as THREE.Material
+          const originalGeom = mesh.geometry
+          mesh.geometry = geomClone
+          const mat = (Array.isArray(originalMat) ? originalMat[0] : originalMat).clone() as THREE.MeshStandardMaterial
+          mat.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms) => {
+            shader.vertexShader = 'attribute float highlightWeight;\nvarying float vHighlightWeight;\n' + shader.vertexShader.replace(
+              '#include <beginnormal_vertex>',
+              'vHighlightWeight = highlightWeight;\n#include <beginnormal_vertex>'
+            )
+            shader.fragmentShader = 'varying float vHighlightWeight;\n' + shader.fragmentShader.replace(
+              '#include <dithering_fragment>',
+              `float _luma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
+vec3 _darkGray = vec3(0.28, 0.28, 0.28);
+vec3 _desat = mix(gl_FragColor.rgb, _darkGray, 0.72);
+gl_FragColor.rgb = mix(_desat, gl_FragColor.rgb, vHighlightWeight);
+#include <dithering_fragment>`
+            )
+          }
+          mesh.material = mat
+          grayMaterialRestoreRef.current.set(mesh as unknown as THREE.Mesh, { material: originalMat, geometry: originalGeom })
+        })
+        return () => restoreGrayed()
+      }
+      // ไม่ใช่ Bone ที่มี SkinnedMesh — ไม่เทาทั้งโมเดล
+      return
+    }
+
+    // ไม่ปิด texture — สีเทาจาง ยังเห็นลาย แต่ไม่เด่นเท่าส่วนที่เลือก
+    const applyDesaturateShader = (mat: THREE.Material) => {
+      const m = mat as THREE.MeshStandardMaterial
+      m.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <dithering_fragment>',
+          `float _desatLuma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
+vec3 _gray = vec3(_desatLuma);
+vec3 _darkGray = vec3(0.28, 0.28, 0.28);
+gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
+#include <dithering_fragment>`
+        )
+      }
+      return m
+    }
+
+    scene.traverse((obj) => {
+      if (!(obj as THREE.Mesh).isMesh) return
+      const mesh = obj as THREE.Mesh
+      if (highlightedMeshes.has(mesh)) return
+      const original = mesh.material
+      if (!original) return
+      const grayMaterial = Array.isArray(original)
+        ? (original as THREE.Material[]).map((m: THREE.Material) => applyDesaturateShader(m.clone()))
+        : applyDesaturateShader((original as THREE.Material).clone())
+      mesh.material = grayMaterial as THREE.Material
+      grayMaterialRestoreRef.current.set(mesh, { material: original as THREE.Material | THREE.Material[] })
+    })
+
+    return () => {
+      restoreGrayed()
+    }
+  }, [scene, highlightedNodeName])
 
   console.log("animations : ", animations);
   // console.log('actions : ', actions);
@@ -715,6 +857,8 @@ interface Viewer3DProps {
   nodeNames: string[]
   nodeTransforms: Record<string, NodeTransform>
   onNodeNamesChange: (names: string[], initialTransforms?: Record<string, NodeTransform>) => void
+  /** โหนดที่เลือกจาก Part Names จะแสดงสี ส่วนอื่นเทา */
+  highlightedNodeName: string | null
   // Note annotations
   notes: NoteAnnotation[]
   isPlacingNote: boolean
@@ -933,6 +1077,7 @@ export default function Viewer3D({
   nodeNames,
   nodeTransforms,
   onNodeNamesChange,
+  highlightedNodeName,
   notes,
   isPlacingNote,
   onNotePlace,
@@ -1025,6 +1170,7 @@ export default function Viewer3D({
               nodeNames={nodeNames}
               nodeTransforms={nodeTransforms}
               onNodeNamesChange={onNodeNamesChange}
+              highlightedNodeName={highlightedNodeName}
             />
           )}
           <CanvasInfoEmitter />

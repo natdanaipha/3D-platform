@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { NoteAnnotation } from '../App'
+import type { NoteAnnotation } from '../../types'
 
 interface NoteMarker3DProps {
   note: NoteAnnotation

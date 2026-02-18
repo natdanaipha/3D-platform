@@ -4,40 +4,11 @@ import ControlsSidebar from './components/ControlsSidebar'
 import RightDrawer from './components/RightDrawer'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card'
 import { Button } from './components/ui/button'
-import { Upload } from 'lucide-react'
+import { Upload, Trash2 } from 'lucide-react'
+import type { NodeTransform, NoteAnnotation, TextAnnotation, PartListItem } from './types'
 
-export interface NodeTransform {
-  visible: boolean
-  positionX: number
-  positionY: number
-  positionZ: number
-  rotationX: number
-  rotationY: number
-  rotationZ: number
-  scale: number
-}
-
-export interface NoteAnnotation {
-  id: string
-  positionX: number
-  positionY: number
-  positionZ: number
-  text: string
-  offsetY: number // ความสูงจากพื้น (offset จาก positionY)
-  createdAt: Date
-}
-
-export interface TextAnnotation {
-  id: string
-  positionX: number
-  positionY: number
-  positionZ: number
-  text: string
-  fontSize: number
-  color: string
-  offsetY: number // ความสูงจากพื้น (offset จาก positionY)
-  createdAt: Date
-}
+// Re-export types สำหรับ components ที่ import จาก App
+export type { NodeTransform, NoteAnnotation, TextAnnotation, PartListItem }
 
 const defaultNodeTransform = (): NodeTransform => ({
   visible: true,
@@ -132,6 +103,13 @@ function App() {
   const [textAnnotations, setTextAnnotations] = useState<TextAnnotation[]>([])
   const [isPlacingText, setIsPlacingText] = useState(false)
 
+  // Part list (Part Names): เลือก node แล้วใส่ label, แสดงรายการด้านซ้าย
+  const [partListItems, setPartListItems] = useState<PartListItem[]>([])
+  const [selectedPartId, setSelectedPartId] = useState<string | null>(null)
+  const [isAddingPart, setIsAddingPart] = useState(false)
+  const [pendingPartNodeName, setPendingPartNodeName] = useState<string | null>(null)
+  const [pendingPartLabel, setPendingPartLabel] = useState('')
+
   const handleNodeNamesChange = (names: string[], initialTransforms?: Record<string, NodeTransform>) => {
     setNodeNames(names)
     setNodeTransforms((prev) => {
@@ -191,8 +169,37 @@ function App() {
       setIsPlacingNote(false)
       setTextAnnotations([])
       setIsPlacingText(false)
+      setPartListItems([])
+      setSelectedPartId(null)
+      setIsAddingPart(false)
+      setPendingPartNodeName(null)
+      setPendingPartLabel('')
     }
   }
+
+  const handlePartListAdd = () => {
+    if (!pendingPartNodeName?.trim() || !pendingPartLabel.trim()) return
+    const newPart: PartListItem = {
+      id: `part-${Date.now()}`,
+      nodeName: pendingPartNodeName.trim(),
+      label: pendingPartLabel.trim(),
+    }
+    setPartListItems((prev) => [...prev, newPart])
+    setSelectedPartId(newPart.id)
+    setPendingPartNodeName(null)
+    setPendingPartLabel('')
+    setIsAddingPart(false)
+  }
+
+  const handlePartListDelete = (id: string) => {
+    setPartListItems((prev) => prev.filter((p) => p.id !== id))
+    if (selectedPartId === id) setSelectedPartId(null)
+  }
+
+  const highlightedNodeName =
+    selectedPartId != null
+      ? partListItems.find((p) => p.id === selectedPartId)?.nodeName ?? null
+      : null
 
   const handleNotePlace = (position: { x: number; y: number; z: number }) => {
     
@@ -334,6 +341,15 @@ function App() {
             onTogglePlaceText={() => setIsPlacingText(!isPlacingText)}
             onTextUpdate={handleTextUpdate}
             onTextDelete={handleTextDelete}
+            nodeNames={nodeNames}
+            partListItems={partListItems}
+            isAddingPart={isAddingPart}
+            setIsAddingPart={setIsAddingPart}
+            pendingPartNodeName={pendingPartNodeName}
+            setPendingPartNodeName={setPendingPartNodeName}
+            pendingPartLabel={pendingPartLabel}
+            setPendingPartLabel={setPendingPartLabel}
+            onPartListAdd={handlePartListAdd}
           />
           <ControlsSidebar
             modelControls={{
@@ -473,6 +489,47 @@ function App() {
               }
             }}
           >
+            {/* Part Names — รายการเลือก node ไว้บนขวานอก Controls */}
+            {partListItems.length > 0 && (
+              <div className="absolute top-4 left-4 z-20 w-56">
+                <Card className="bg-card/90 backdrop-blur-sm border-border/80 [&>*]:text-foreground">
+                  <CardHeader className="py-3 px-4">
+                    <CardTitle className="text-sm font-medium">Part Names</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-0.5">Entire model</p>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-4 pb-3">
+                    <ul className="space-y-0.5">
+                      {partListItems.map((part) => (
+                        <li key={part.id}>
+                          <div
+                            className={`flex items-center justify-between gap-2 py-2 px-2 rounded-md cursor-pointer text-sm ${
+                              selectedPartId === part.id
+                                ? 'bg-primary/15 text-primary border border-primary/30'
+                                : 'hover:bg-muted/50'
+                            }`}
+                            onClick={() => setSelectedPartId(selectedPartId === part.id ? null : part.id)}
+                          >
+                            <span className="truncate">{part.label || part.nodeName}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handlePartListDelete(part.id)
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
             <Viewer3D
               modelUrl={selectedModel}
               positionX={positionX}
@@ -528,6 +585,7 @@ function App() {
               nodeNames={nodeNames}
               nodeTransforms={nodeTransforms}
               onNodeNamesChange={handleNodeNamesChange}
+              highlightedNodeName={highlightedNodeName}
               notes={notes}
               isPlacingNote={isPlacingNote}
               onNotePlace={handleNotePlace}
