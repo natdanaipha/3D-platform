@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button } from './ui/button'
 import { Card } from './ui/card'
 import { ChevronLeft, ChevronRight, MapPin, Plus, Trash2, X, Type } from 'lucide-react'
-import type { NoteAnnotation, TextAnnotation } from '../App'
+import type { NoteAnnotation, TextAnnotation, PartListItem } from '../types'
 
 interface RightDrawerProps {
   isOpen?: boolean
@@ -17,6 +17,16 @@ interface RightDrawerProps {
   onTogglePlaceText?: () => void
   onTextUpdate?: (id: string, updates: Partial<TextAnnotation>) => void
   onTextDelete?: (id: string) => void
+  /** Part Names: รายการส่วนของโมเดล (เลือก node แล้วตั้งชื่อ) */
+  nodeNames?: string[]
+  partListItems?: PartListItem[]
+  isAddingPart?: boolean
+  setIsAddingPart?: (v: boolean) => void
+  pendingPartNodeName?: string | null
+  setPendingPartNodeName?: (v: string | null) => void
+  pendingPartLabel?: string
+  setPendingPartLabel?: (v: string) => void
+  onPartListAdd?: () => void
 }
 
 export default function RightDrawer({ 
@@ -32,6 +42,15 @@ export default function RightDrawer({
   onTogglePlaceText = () => {},
   onTextUpdate = () => {},
   onTextDelete = () => {},
+  nodeNames = [],
+  partListItems = [],
+  isAddingPart = false,
+  setIsAddingPart = () => {},
+  pendingPartNodeName = null,
+  setPendingPartNodeName = () => {},
+  pendingPartLabel = '',
+  setPendingPartLabel = () => {},
+  onPartListAdd = () => {},
 }: RightDrawerProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
@@ -282,6 +301,80 @@ export default function RightDrawer({
                   </p>
                 </div>
               )}
+
+              {/* Part Names: เลือก node ก่อน แล้วตั้งชื่อรายการ (เช่น Head, Leg) */}
+              <div className="space-y-3 border-t pt-4 mt-4">
+                <h3 className="text-sm font-medium text-muted-foreground">Part Names</h3>
+                <p className="text-xs text-muted-foreground">
+                  เพิ่มรายการ: เลือก node จากโมเดลก่อน แล้วใส่ชื่อ (เช่น Head, Leg)
+                </p>
+                {!isAddingPart ? (
+                  <Button
+                    onClick={() => setIsAddingPart(true)}
+                    variant="outline"
+                    className="w-full"
+                    size="sm"
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Add Part
+                  </Button>
+                ) : (
+                  <div className="space-y-2 p-3 bg-muted/30 rounded-lg border">
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">1. เลือก Node</label>
+                      <select
+                        value={pendingPartNodeName ?? ''}
+                        onChange={(e) => setPendingPartNodeName(e.target.value || null)}
+                        className="w-full p-2 text-sm border rounded-md"
+                      >
+                        <option value="">-- เลือก node --</option>
+                        {nodeNames.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">2. ชื่อรายการ (เช่น Head, Leg)</label>
+                      <input
+                        type="text"
+                        value={pendingPartLabel}
+                        onChange={(e) => setPendingPartLabel(e.target.value)}
+                        placeholder="เช่น Head, Leg"
+                        className="w-full p-2 text-sm border rounded-md"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={onPartListAdd}
+                        disabled={!pendingPartNodeName?.trim() || !pendingPartLabel.trim()}
+                        className="flex-1"
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setIsAddingPart(false)
+                          setPendingPartNodeName(null)
+                          setPendingPartLabel('')
+                        }}
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {partListItems.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    รายการ {partListItems.length} รายการ — คลิกที่รายการด้านซ้ายเพื่อเน้นส่วนนั้น
+                  </p>
+                )}
+              </div>
 
               {/* Text Annotations List */}
               <div className="space-y-2">

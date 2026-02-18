@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { ChevronLeft, ChevronRight, Settings, ChevronDown, ChevronUp, X, ArrowUp, ArrowDown, Upload, Trash2 } from 'lucide-react'
-import type { NodeTransform } from '../App'
+import type { NodeTransform } from '../types'
 
 function NodeCard({
   nodeName,

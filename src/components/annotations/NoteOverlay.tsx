@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import NoteCard from './NoteCard'
-import type { NoteAnnotation } from '../App'
+import type { NoteAnnotation } from '../../types'
 
 interface NoteOverlayProps {
   notes: NoteAnnotation[]
