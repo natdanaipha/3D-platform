@@ -753,7 +753,7 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
     // อัปเดต SkeletonHelper ให้ตามตำแหน่ง mesh ทุกเฟรม (ขยับตาม animation)
     const helper = skeletonHelperRef.current
     const root = helper && (helper as any).root
-    if (root?.isSkinnedMesh) {
+    if (root?.isSkinnedMesh && helper) {
       const mesh = root as THREE.SkinnedMesh
       mesh.updateMatrixWorld(true)
       helper.matrix.copy(mesh.matrixWorld)
