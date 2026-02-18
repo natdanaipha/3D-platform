@@ -32,6 +32,7 @@ interface NoteMarker3DProps {
 }
 
 const NOTE_COLOR = '#ef4444'
+const NOTE_FOCUS_COLOR = '#3b82f6' 
 
 export default function NoteMarker3D({
   note,
@@ -138,20 +139,40 @@ export default function NoteMarker3D({
     el.addEventListener('pointerup', onPointerUp, { once: true })
   }
 
+  const sphereRadius = isMoving ? 0.07 : 0.05
+  const ringInner = isMoving ? 0.12 : 0.08
+  const ringOuter = isMoving ? 0.16 : 0.1
+
   return (
     <group ref={groupRef} position={displayPosition}>
       <mesh ref={markerRef} onPointerDown={handlePointerDown}>
-        <sphereGeometry args={[0.05, 16, 16]} />
+        <sphereGeometry args={[sphereRadius, 16, 16]} />
         <meshStandardMaterial
-          color={NOTE_COLOR}
-          emissive={NOTE_COLOR}
-          emissiveIntensity={isMoving ? 0.8 : 0.5}
+          color={isMoving ? NOTE_FOCUS_COLOR : NOTE_COLOR}
+          emissive={isMoving ? NOTE_FOCUS_COLOR : NOTE_COLOR}
+          emissiveIntensity={isMoving ? 1 : 0.5}
         />
       </mesh>
       <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.08, 0.1, 32]} />
-        <meshBasicMaterial color={NOTE_COLOR} transparent opacity={0.3} />
+        <ringGeometry args={[ringInner, ringOuter, 32]} />
+        <meshBasicMaterial
+          color={isMoving ? NOTE_FOCUS_COLOR : NOTE_COLOR}
+          transparent
+          opacity={isMoving ? 0.6 : 0.3}
+        />
       </mesh>
+      {/* วงโฟกัสรอบหมุดเมื่ออยู่ในโหมดย้าย */}
+      {isMoving && (
+        <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.18, 0.22, 32]} />
+          <meshBasicMaterial
+            color={NOTE_FOCUS_COLOR}
+            transparent
+            opacity={0.4}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
     </group>
   )
 }

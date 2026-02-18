@@ -1079,10 +1079,11 @@ function findClosestBoneAttachment(
   traverse(modelGroup)
 
   if (!closestBone) return null
-  const inv = new THREE.Matrix4().copy(closestBone.matrixWorld).invert()
+  const bone = closestBone as THREE.Bone
+  const inv = new THREE.Matrix4().copy(bone.matrixWorld).invert()
   const localOffset = worldPoint.clone().applyMatrix4(inv)
   return {
-    boneName: closestBone.name,
+    boneName: bone.name,
     offset: { x: localOffset.x, y: localOffset.y, z: localOffset.z },
   }
 }
