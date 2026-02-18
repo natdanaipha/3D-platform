@@ -21,6 +21,10 @@ export interface NoteAnnotation {
   text: string
   offsetY: number
   createdAt: Date
+  /** ถ้ามีค่า หมุดจะผูกกับกระดูกนี้และเคลื่อนตาม animation */
+  attachedBoneName?: string
+  /** ออฟเซ็ตจากกระดูก (local space) ใช้เมื่อ attachedBoneName มีค่า */
+  attachedBoneOffset?: { x: number; y: number; z: number }
 }
 
 export interface TextAnnotation {

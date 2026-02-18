@@ -208,18 +208,21 @@ function App() {
       ? partListItems.find((p) => p.id === selectedPartId)?.nodeName ?? null
       : null
 
-  const handleNotePlace = (position: { x: number; y: number; z: number }) => {
-    
+  const handleNotePlace = (payload: { x: number; y: number; z: number; attachedBoneName?: string; attachedBoneOffset?: { x: number; y: number; z: number } }) => {
     if (!isPlacingNote) return
-    
+
     const newNote: NoteAnnotation = {
       id: `note-${Date.now()}`,
-      positionX: position.x,
-      positionY: position.y,
-      positionZ: position.z,
+      positionX: payload.x,
+      positionY: payload.y,
+      positionZ: payload.z,
       text: '',
-      offsetY: 0, // 0 = ปักติดผิวโมเดลตรงจุดที่คลิก
+      offsetY: 0,
       createdAt: new Date(),
+      ...(payload.attachedBoneName && payload.attachedBoneOffset && {
+        attachedBoneName: payload.attachedBoneName,
+        attachedBoneOffset: payload.attachedBoneOffset,
+      }),
     }
     setNotes([...notes, newNote])
     setIsPlacingNote(false)

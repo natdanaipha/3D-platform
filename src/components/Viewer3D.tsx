@@ -898,7 +898,7 @@ interface Viewer3DProps {
   // Note annotations
   notes: NoteAnnotation[]
   isPlacingNote: boolean
-  onNotePlace: (position: { x: number; y: number; z: number }) => void
+  onNotePlace: (payload: { x: number; y: number; z: number; attachedBoneName?: string; attachedBoneOffset?: { x: number; y: number; z: number } }) => void
   onNoteUpdate: (id: string, updates: Partial<NoteAnnotation>) => void
   onNoteDelete: (id: string) => void
   onNoteEdit?: (id: string) => void
@@ -986,16 +986,51 @@ function TextAnnotations({ textAnnotations }: { textAnnotations: TextAnnotation[
   )
 }
 
+// หา bone ที่ใกล้จุด world มากที่สุดจาก model group (สำหรับผูกหมุดให้เคลื่อนตาม animation)
+function findClosestBoneAttachment(
+  modelGroup: THREE.Group,
+  worldPoint: THREE.Vector3
+): { boneName: string; offset: { x: number; y: number; z: number } } | null {
+  modelGroup.updateMatrixWorld(true)
+  let closestBone: THREE.Bone | null = null
+  let closestDistSq = Infinity
+  const tempPos = new THREE.Vector3()
+
+  const traverse = (obj: THREE.Object3D) => {
+    const mesh = obj as THREE.SkinnedMesh
+    if (mesh.isSkinnedMesh && mesh.skeleton?.bones?.length) {
+      for (const bone of mesh.skeleton.bones as THREE.Bone[]) {
+        bone.getWorldPosition(tempPos)
+        const d = tempPos.distanceToSquared(worldPoint)
+        if (d < closestDistSq) {
+          closestDistSq = d
+          closestBone = bone
+        }
+      }
+    }
+    obj.children.forEach(traverse)
+  }
+  traverse(modelGroup)
+
+  if (!closestBone) return null
+  const inv = new THREE.Matrix4().copy(closestBone.matrixWorld).invert()
+  const localOffset = worldPoint.clone().applyMatrix4(inv)
+  return {
+    boneName: closestBone.name,
+    offset: { x: localOffset.x, y: localOffset.y, z: localOffset.z },
+  }
+}
+
 // Component to handle click events for placing notes and text annotations
-function ClickHandler({ 
-  isPlacingNote, 
+function ClickHandler({
+  isPlacingNote,
   onNotePlace,
   isPlacingText,
   onTextPlace,
-  modelRef 
-}: { 
+  modelRef,
+}: {
   isPlacingNote: boolean
-  onNotePlace: (position: { x: number; y: number; z: number }) => void
+  onNotePlace: (payload: { x: number; y: number; z: number; attachedBoneName?: string; attachedBoneOffset?: { x: number; y: number; z: number } }) => void
   isPlacingText: boolean
   onTextPlace: (position: { x: number; y: number; z: number }) => void
   modelRef: React.RefObject<any>
@@ -1027,7 +1062,16 @@ function ClickHandler({
         if (intersects.length > 0) {
           const point = intersects[0].point
           if (isPlacingNote) {
-            onNotePlace({ x: point.x, y: point.y, z: point.z })
+            const attachment = findClosestBoneAttachment(modelGroup, point)
+            onNotePlace({
+              x: point.x,
+              y: point.y,
+              z: point.z,
+              ...(attachment && {
+                attachedBoneName: attachment.boneName,
+                attachedBoneOffset: attachment.offset,
+              }),
+            })
           } else if (isPlacingText) {
             onTextPlace({ x: point.x, y: point.y, z: point.z })
           }
@@ -1042,7 +1086,7 @@ function ClickHandler({
           allObjects.push(obj)
         }
       })
-      
+
       if (allObjects.length > 0) {
         const intersects = raycaster.current.intersectObjects(allObjects, true)
         if (intersects.length > 0) {
@@ -1060,7 +1104,7 @@ function ClickHandler({
       const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)
       const intersectPoint = new THREE.Vector3()
       raycaster.current.ray.intersectPlane(plane, intersectPoint)
-      
+
       if (intersectPoint) {
         if (isPlacingNote) {
           onNotePlace({ x: intersectPoint.x, y: intersectPoint.y, z: intersectPoint.z })
@@ -1243,6 +1287,7 @@ export default function Viewer3D({
             <NoteMarker3D
               key={note.id}
               note={note}
+              modelRef={modelRef}
               isMoving={movingNoteId === note.id}
               onPositionChange={(pos) =>
                 onNoteUpdate(note.id, {
@@ -1250,6 +1295,8 @@ export default function Viewer3D({
                   positionY: pos.y,
                   positionZ: pos.z,
                   offsetY: 0,
+                  attachedBoneName: undefined,
+                  attachedBoneOffset: undefined,
                 })
               }
               onMoveEnd={onEndMoveNote}
