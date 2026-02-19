@@ -52,8 +52,8 @@ interface ModelProps {
   nodeNames: string[]
   nodeTransforms: Record<string, NodeTransform>
   onNodeNamesChange: (names: string[], initialTransforms?: Record<string, NodeTransform>) => void
-  /** เมื่อมีค่า โหนดนี้และลูกจะแสดงสีปกติ ส่วนอื่นเป็นสีเทา */
-  highlightedNodeName: string | null
+  /** เมื่อมีค่า โหนดเหล่านี้และลูกจะแสดงสีปกติ ส่วนอื่นเป็นสีเทา */
+  highlightedNodeNames: string[]
 }
 
 // Component to load and display GLB model
@@ -99,7 +99,7 @@ const Model = forwardRef<any, ModelProps>(({
   nodeNames: _nodeNames,
   nodeTransforms,
   onNodeNamesChange,
-  highlightedNodeName,
+  highlightedNodeNames,
 }, ref) => {
   const { scene, animations } = useGLTF(url)
   const groupRef = useRef<THREE.Group>(null)
@@ -440,7 +440,7 @@ const Model = forwardRef<any, ModelProps>(({
     })
   }, [scene, nodeTransforms])
 
-  // Highlight one node: โหนดที่เลือกมีสีเดิม ส่วนอื่นเป็นสีเทา
+  // Highlight nodes: โหนดที่เลือกมีสีเดิม ส่วนอื่นเป็นสีเทา (รองรับหลาย node)
   useEffect(() => {
     if (!scene) return
 
@@ -459,90 +459,93 @@ const Model = forwardRef<any, ModelProps>(({
 
     restoreGrayed()
 
-    if (!highlightedNodeName) return
+    if (highlightedNodeNames.length === 0) return
 
     const highlightedMeshes = new Set<THREE.Mesh>()
-    // หาโหนดที่เลือก (รองรับทั้งที่ชื่ออยู่บน Mesh เอง หรือบน Group ที่มี Mesh ข้างใน)
-    let highlightRoot: THREE.Object3D | undefined
-    scene.traverse((obj) => {
-      if (obj.name === highlightedNodeName) {
-        highlightRoot = obj
-      }
-    })
-    if (!highlightRoot) {
-      highlightRoot = scene.getObjectByName(highlightedNodeName) || undefined
-    }
-    if (highlightRoot) {
-      highlightRoot.traverse((obj) => {
-        if ((obj as THREE.Mesh).isMesh) {
-          highlightedMeshes.add(obj as THREE.Mesh)
-        }
+    const boneIndices: { index: number; skeleton: THREE.Skeleton }[] = []
+
+    for (const nodeName of highlightedNodeNames) {
+      let highlightRoot: THREE.Object3D | undefined
+      scene.traverse((obj) => {
+        if (obj.name === nodeName) highlightRoot = obj
       })
+      if (!highlightRoot) {
+        highlightRoot = scene.getObjectByName(nodeName) || undefined
+      }
+      if (highlightRoot) {
+        let foundMesh = false
+        highlightRoot.traverse((obj) => {
+          if ((obj as THREE.Mesh).isMesh) {
+            highlightedMeshes.add(obj as THREE.Mesh)
+            foundMesh = true
+          }
+        })
+        if (!foundMesh) {
+          scene.traverse((obj) => {
+            const skinned = obj as THREE.SkinnedMesh
+            if (skinned.isSkinnedMesh && skinned.skeleton) {
+              const idx = skinned.skeleton.bones.findIndex(
+                (b: THREE.Bone) => b === highlightRoot || b.name === nodeName,
+              )
+              if (idx >= 0) boneIndices.push({ index: idx, skeleton: skinned.skeleton })
+            }
+          })
+        }
+      }
     }
 
-    // โหนดที่เลือกไม่มี mesh — ลองว่าเป็น Bone ของ SkinnedMesh หรือไม่ (เช่น เท้า ขวา)
-    if (highlightedMeshes.size === 0 && highlightRoot) {
-      let boneIndex = -1
-      let skeleton: THREE.Skeleton | null = null
+    if (highlightedMeshes.size === 0 && boneIndices.length > 0) {
+      const boneIndexSet = new Map<THREE.Skeleton, Set<number>>()
+      for (const { index, skeleton } of boneIndices) {
+        if (!boneIndexSet.has(skeleton)) boneIndexSet.set(skeleton, new Set())
+        boneIndexSet.get(skeleton)!.add(index)
+      }
       scene.traverse((obj) => {
-        const skinned = obj as THREE.SkinnedMesh
-        if (skinned.isSkinnedMesh && skinned.skeleton) {
-          const bones = skinned.skeleton.bones
-          const idx = bones.findIndex((b: THREE.Bone) => b === highlightRoot || b.name === highlightedNodeName)
-          if (idx >= 0) {
-            boneIndex = idx
-            skeleton = skinned.skeleton
+        const mesh = obj as THREE.SkinnedMesh
+        if (!mesh.isSkinnedMesh || !boneIndexSet.has(mesh.skeleton)) return
+        const indices = boneIndexSet.get(mesh.skeleton)!
+        const geom = mesh.geometry
+        const skinIndex = geom.getAttribute('skinIndex') as THREE.BufferAttribute
+        const skinWeight = geom.getAttribute('skinWeight') as THREE.BufferAttribute
+        if (!skinIndex || !skinWeight) return
+        const count = geom.getAttribute('position').count
+        const highlightWeight = new Float32Array(count)
+        for (let i = 0; i < count; i++) {
+          let w = 0
+          for (let c = 0; c < 4; c++) {
+            const idx = skinIndex.getComponent(i, c)
+            if (indices.has(idx)) w += skinWeight.getComponent(i, c)
           }
+          highlightWeight[i] = w
         }
-      })
-      if (boneIndex >= 0 && skeleton) {
-        scene.traverse((obj) => {
-          const mesh = obj as THREE.SkinnedMesh
-          if (!mesh.isSkinnedMesh || mesh.skeleton !== skeleton) return
-          const geom = mesh.geometry
-          const skinIndex = geom.getAttribute('skinIndex') as THREE.BufferAttribute
-          const skinWeight = geom.getAttribute('skinWeight') as THREE.BufferAttribute
-          if (!skinIndex || !skinWeight) return
-          const count = geom.getAttribute('position').count
-          const highlightWeight = new Float32Array(count)
-          for (let i = 0; i < count; i++) {
-            let w = 0
-            for (let c = 0; c < 4; c++) {
-              const idx = skinIndex.getComponent(i, c)
-              if (idx === boneIndex) w += skinWeight.getComponent(i, c)
-            }
-            highlightWeight[i] = w
-          }
-          const geomClone = geom.clone()
-          geomClone.setAttribute('highlightWeight', new THREE.BufferAttribute(highlightWeight, 1))
-          const originalMat = mesh.material as THREE.Material
-          const originalGeom = mesh.geometry
-          mesh.geometry = geomClone
-          const mat = (Array.isArray(originalMat) ? originalMat[0] : originalMat).clone() as THREE.MeshStandardMaterial
-          mat.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms) => {
-            shader.vertexShader = 'attribute float highlightWeight;\nvarying float vHighlightWeight;\n' + shader.vertexShader.replace(
-              '#include <beginnormal_vertex>',
-              'vHighlightWeight = highlightWeight;\n#include <beginnormal_vertex>'
-            )
-            shader.fragmentShader = 'varying float vHighlightWeight;\n' + shader.fragmentShader.replace(
-              '#include <dithering_fragment>',
-              `float _luma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
+        const geomClone = geom.clone()
+        geomClone.setAttribute('highlightWeight', new THREE.BufferAttribute(highlightWeight, 1))
+        const originalMat = mesh.material as THREE.Material
+        const originalGeom = mesh.geometry
+        mesh.geometry = geomClone
+        const mat = (Array.isArray(originalMat) ? originalMat[0] : originalMat).clone() as THREE.MeshStandardMaterial
+        mat.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms) => {
+          shader.vertexShader = 'attribute float highlightWeight;\nvarying float vHighlightWeight;\n' + shader.vertexShader.replace(
+            '#include <beginnormal_vertex>',
+            'vHighlightWeight = highlightWeight;\n#include <beginnormal_vertex>',
+          )
+          shader.fragmentShader = 'varying float vHighlightWeight;\n' + shader.fragmentShader.replace(
+            '#include <dithering_fragment>',
+            `float _luma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
 vec3 _darkGray = vec3(0.28, 0.28, 0.28);
 vec3 _desat = mix(gl_FragColor.rgb, _darkGray, 0.72);
 gl_FragColor.rgb = mix(_desat, gl_FragColor.rgb, vHighlightWeight);
-#include <dithering_fragment>`
-            )
-          }
-          mesh.material = mat
-          grayMaterialRestoreRef.current.set(mesh as unknown as THREE.Mesh, { material: originalMat, geometry: originalGeom })
-        })
-        return () => restoreGrayed()
-      }
-      // ไม่ใช่ Bone ที่มี SkinnedMesh — ไม่เทาทั้งโมเดล
-      return
+#include <dithering_fragment>`,
+          )
+        }
+        mesh.material = mat
+        grayMaterialRestoreRef.current.set(mesh as unknown as THREE.Mesh, { material: originalMat, geometry: originalGeom })
+      })
+      return () => restoreGrayed()
     }
 
-    // ไม่ปิด texture — สีเทาจาง ยังเห็นลาย แต่ไม่เด่นเท่าส่วนที่เลือก
+    if (highlightedMeshes.size === 0) return
+
     const applyDesaturateShader = (mat: THREE.Material) => {
       const m = mat as THREE.MeshStandardMaterial
       m.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms) => {
@@ -552,7 +555,7 @@ gl_FragColor.rgb = mix(_desat, gl_FragColor.rgb, vHighlightWeight);
 vec3 _gray = vec3(_desatLuma);
 vec3 _darkGray = vec3(0.28, 0.28, 0.28);
 gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
-#include <dithering_fragment>`
+#include <dithering_fragment>`,
         )
       }
       return m
@@ -574,7 +577,7 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
     return () => {
       restoreGrayed()
     }
-  }, [scene, highlightedNodeName])
+  }, [scene, highlightedNodeNames])
 
   console.log("animations : ", animations);
   // console.log('actions : ', actions);
@@ -959,8 +962,8 @@ interface Viewer3DProps {
   nodeNames: string[]
   nodeTransforms: Record<string, NodeTransform>
   onNodeNamesChange: (names: string[], initialTransforms?: Record<string, NodeTransform>) => void
-  /** โหนดที่เลือกจาก Part Names จะแสดงสี ส่วนอื่นเทา */
-  highlightedNodeName: string | null
+  /** โหนดที่เลือกจะแสดงสี ส่วนอื่นเทา (รองรับหลาย node) */
+  highlightedNodeNames: string[]
   // Note annotations
   notes: NoteAnnotation[]
   isPlacingNote: boolean
@@ -1253,7 +1256,7 @@ export default function Viewer3D({
   nodeNames,
   nodeTransforms,
   onNodeNamesChange,
-  highlightedNodeName,
+  highlightedNodeNames,
   notes,
   isPlacingNote,
   onNotePlace,
@@ -1358,7 +1361,7 @@ export default function Viewer3D({
               nodeNames={nodeNames}
               nodeTransforms={nodeTransforms}
               onNodeNamesChange={onNodeNamesChange}
-              highlightedNodeName={highlightedNodeName}
+              highlightedNodeNames={highlightedNodeNames}
             />
           )}
           <CanvasInfoEmitter />

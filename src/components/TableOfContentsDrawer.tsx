@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Edit2,
+  Highlighter,
   List,
   Play,
   Plus,
@@ -18,6 +19,7 @@ interface TableOfContentsDrawerProps {
   setIsOpen?: (open: boolean) => void
   sections: TocSection[]
   animationNames: string[]
+  nodeNames: string[]
   onAddSection: () => void
   onRemoveSection: (id: string) => void
   onUpdateSection: (id: string, updates: Partial<TocSection>) => void
@@ -29,6 +31,7 @@ export default function TableOfContentsDrawer({
   setIsOpen: externalSetIsOpen,
   sections,
   animationNames,
+  nodeNames,
   onAddSection,
   onRemoveSection,
   onUpdateSection,
@@ -155,6 +158,12 @@ export default function TableOfContentsDrawer({
                           <span className="flex items-center gap-0.5 text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
                             <Play className="h-2.5 w-2.5" />
                             {section.animationName}
+                          </span>
+                        )}
+                        {(section.highlightNodes ?? []).length > 0 && (
+                          <span className="flex items-center gap-0.5 text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                            <Highlighter className="h-2.5 w-2.5" />
+                            {section.highlightNodes!.length}
                           </span>
                         )}
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -300,6 +309,60 @@ export default function TableOfContentsDrawer({
                         />
                         <span className="text-xs text-neutral-400">°</span>
                       </div>
+
+                      <div className="border-t border-neutral-200 pt-2 mt-2" />
+
+                      <label className="text-xs font-medium text-neutral-500 uppercase tracking-wider">
+                        Highlight Nodes
+                      </label>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const node = e.target.value
+                          if (!node) return
+                          const current = section.highlightNodes ?? []
+                          if (!current.includes(node)) {
+                            onUpdateSection(section.id, { highlightNodes: [...current, node] })
+                          }
+                        }}
+                        className="w-full px-2 py-1.5 text-sm border border-neutral-200 rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      >
+                        <option value="">-- Add Node --</option>
+                        {nodeNames
+                          .filter((n) => !(section.highlightNodes ?? []).includes(n))
+                          .map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                      </select>
+                      {(section.highlightNodes ?? []).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {section.highlightNodes!.map((node) => (
+                            <span
+                              key={node}
+                              className="inline-flex items-center gap-1 text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full"
+                            >
+                              {node}
+                              <button
+                                onClick={() =>
+                                  onUpdateSection(section.id, {
+                                    highlightNodes: section.highlightNodes!.filter((n) => n !== node),
+                                  })
+                                }
+                                className="hover:text-red-600"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {nodeNames.length === 0 && (
+                        <p className="text-xs text-neutral-400">
+                          No nodes available in this model
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

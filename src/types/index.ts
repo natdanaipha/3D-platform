@@ -49,6 +49,8 @@ export interface TocSection {
   cameraY?: number
   cameraZ?: number
   cameraFov?: number
+  /** รายชื่อ node ที่จะ highlight เมื่อเข้า section นี้ */
+  highlightNodes?: string[]
 }
 
 /** รายการ Part Names: เลือก node จากโมเดล แล้วตั้งชื่อ (เช่น Head, Leg) */

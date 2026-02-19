@@ -156,6 +156,7 @@ function App() {
       setCameraTargetZ(section.cameraZ ?? null)
       setCameraTargetFov(section.cameraFov ?? null)
     }
+    setTocHighlightNodes(section.highlightNodes ?? [])
   }
 
   const handleCameraTransitionEnd = () => {
@@ -255,10 +256,16 @@ function App() {
     if (selectedPartId === id) setSelectedPartId(null)
   }
 
-  const highlightedNodeName =
-    selectedPartId != null
-      ? partListItems.find((p) => p.id === selectedPartId)?.nodeName ?? null
-      : null
+  const [tocHighlightNodes, setTocHighlightNodes] = useState<string[]>([])
+
+  const highlightedNodeNames: string[] = (() => {
+    const names: string[] = [...tocHighlightNodes]
+    if (selectedPartId != null) {
+      const partNode = partListItems.find((p) => p.id === selectedPartId)?.nodeName
+      if (partNode && !names.includes(partNode)) names.push(partNode)
+    }
+    return names
+  })()
 
   const handleNotePlace = (payload: { x: number; y: number; z: number; attachedBoneName?: string; attachedBoneOffset?: { x: number; y: number; z: number } }) => {
     if (!isPlacingNote) return
@@ -400,6 +407,7 @@ function App() {
             setIsOpen={setTocDrawerOpen}
             sections={tocSections}
             animationNames={animationNames}
+            nodeNames={nodeNames}
             onAddSection={handleAddTocSection}
             onRemoveSection={handleRemoveTocSection}
             onUpdateSection={handleUpdateTocSection}
@@ -675,7 +683,7 @@ function App() {
               nodeNames={nodeNames}
               nodeTransforms={nodeTransforms}
               onNodeNamesChange={handleNodeNamesChange}
-              highlightedNodeName={highlightedNodeName}
+              highlightedNodeNames={highlightedNodeNames}
               notes={notes}
               isPlacingNote={isPlacingNote}
               onNotePlace={handleNotePlace}
