@@ -1,16 +1,18 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Viewer3D from '../components/Viewer3D'
 import ControlsSidebar from '../components/ControlsSidebar'
 import RightDrawer from '../components/RightDrawer'
 import TableOfContentsDrawer from '../components/TableOfContentsDrawer'
 import TCPreview from '../components/TCPreview'
+import TimelinePanel from '../components/TimelinePanel'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
-import { Upload, Trash2, ArrowLeft, StickyNote } from 'lucide-react'
-import type { NodeTransform, NoteAnnotation, NotePage, TextAnnotation, PartListItem, TocSection } from '../types'
+import { Upload, Trash2, ArrowLeft, StickyNote, Download, FolderOpen } from 'lucide-react'
+import type { NodeTransform, NoteAnnotation, NotePage, TextAnnotation, PartListItem, TocSection, Sequence, Shot } from '../types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '../components/ui/dialog'
 import NoteRichEditor from '../components/annotations/NoteRichEditor'
+import { usePlaybackEngine } from '../hooks/usePlaybackEngine'
 
 const defaultNodeTransform = (): NodeTransform => ({
   visible: true,
@@ -143,6 +145,134 @@ export default function ViewerPage() {
   const [cameraTargetY, setCameraTargetY] = useState<number | null>(null)
   const [cameraTargetZ, setCameraTargetZ] = useState<number | null>(null)
   const [cameraTargetFov, setCameraTargetFov] = useState<number | null>(null)
+
+  // ─── Sequencer / Timeline state ───
+  const [sequence, setSequence] = useState<Sequence>({
+    id: 'seq-default',
+    name: 'Sequence 1',
+    shots: [],
+  })
+  const [defaultShotDuration, setDefaultShotDuration] = useState(3)
+
+  const playback = usePlaybackEngine(sequence.shots, tocSections)
+
+  // When playback is running, override camera / animation / highlights
+  const prevActiveShotRef = useRef(-1)
+  const pbState = playback.state
+
+  useEffect(() => {
+    if (!pbState) return
+    // Apply camera instantly (no smooth transition – playback engine handles interpolation)
+    setCameraX(pbState.cameraX)
+    setCameraY(pbState.cameraY)
+    setCameraZ(pbState.cameraZ)
+    setFov(pbState.cameraFov)
+    // Apply highlights
+    setTocHighlightNodes(pbState.highlightNodes)
+
+    // On shot change → apply animation
+    if (pbState.activeShotIndex !== prevActiveShotRef.current) {
+      prevActiveShotRef.current = pbState.activeShotIndex
+      if (pbState.animationName) {
+        setSelectedAnimation(pbState.animationName)
+        setAnimationSpeed(pbState.animationSpeed)
+        setAnimationEnabled(true)
+        // restart clip
+        const modelRef = (window as any).__modelRef
+        if (modelRef) {
+          modelRef.stop()
+          modelRef.play()
+        }
+      }
+    }
+  }, [pbState])
+
+  // ─── Sequence CRUD ───
+  const handleAddShot = useCallback((sectionId: string) => {
+    const newShot: Shot = {
+      shotId: `shot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      sectionId,
+      duration: defaultShotDuration,
+      transition: { type: 'crossfade', duration: 0.5, easing: 'easeInOut' },
+    }
+    setSequence((prev) => ({ ...prev, shots: [...prev.shots, newShot] }))
+  }, [defaultShotDuration])
+
+  const handleRemoveShot = useCallback((shotId: string) => {
+    setSequence((prev) => ({ ...prev, shots: prev.shots.filter((s) => s.shotId !== shotId) }))
+  }, [])
+
+  const handleUpdateShots = useCallback((shots: Shot[]) => {
+    setSequence((prev) => ({ ...prev, shots }))
+  }, [])
+
+  const handleCreateFromToc = useCallback(() => {
+    const shots: Shot[] = tocSections.map((sec, i) => ({
+      shotId: `shot-${Date.now()}-${i}`,
+      sectionId: sec.id,
+      duration: defaultShotDuration,
+      transition: { type: i === 0 ? 'cut' as const : 'crossfade' as const, duration: 0.5, easing: 'easeInOut' as const },
+    }))
+    setSequence((prev) => ({ ...prev, shots }))
+  }, [tocSections, defaultShotDuration])
+
+  // ─── Save / Load JSON ───
+  const handleSaveProject = useCallback(() => {
+    const data = JSON.stringify({ sections: tocSections, sequence }, null, 2)
+    const blob = new Blob([data], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${sequence.name || 'project'}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [tocSections, sequence])
+
+  const handleLoadProject = useCallback(() => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.json'
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (!file) return
+      const reader = new FileReader()
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result as string)
+          if (data.sections) setTocSections(data.sections)
+          if (data.sequence) setSequence(data.sequence)
+        } catch {
+          // invalid JSON – ignore
+        }
+      }
+      reader.readAsText(file)
+    }
+    input.click()
+  }, [])
+
+  // ─── Keyboard shortcuts ───
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Ignore when typing in inputs
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      if (e.code === 'Space') {
+        e.preventDefault()
+        playback.isPlaying ? playback.pause() : playback.play()
+      }
+      if (e.code === 'ArrowLeft') {
+        e.preventDefault()
+        playback.seek(Math.max(0, playback.currentTime - 0.5))
+      }
+      if (e.code === 'ArrowRight') {
+        e.preventDefault()
+        playback.seek(playback.currentTime + 0.5)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [playback])
 
   const handleAddTocSection = () => {
     setTocSections((prev) => [...prev, { id: `sec-${Date.now()}`, title: 'New Section' }])
@@ -434,6 +564,7 @@ export default function ViewerPage() {
           if (cam.z !== undefined) setCameraZ(cam.z)
           if (cam.fov !== undefined) setFov(cam.fov)
         }}
+        onAddToTimeline={handleAddShot}
       />
       <RightDrawer
         isOpen={rightDrawerOpen}
@@ -684,6 +815,14 @@ export default function ViewerPage() {
             <Upload className="mr-2 h-4 w-4" />
             Upload New Model
           </Button>
+          <Button variant="outline" onClick={handleSaveProject} title="Save sections + sequence as JSON">
+            <Download className="mr-2 h-4 w-4" />
+            Save
+          </Button>
+          <Button variant="outline" onClick={handleLoadProject} title="Load sections + sequence from JSON">
+            <FolderOpen className="mr-2 h-4 w-4" />
+            Load
+          </Button>
           <Button
             variant="secondary"
             onClick={() => {
@@ -782,6 +921,27 @@ export default function ViewerPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {/* ─── Timeline Panel (bottom) ─── */}
+      <TimelinePanel
+        sequence={sequence}
+        sections={tocSections}
+        currentTime={playback.currentTime}
+        isPlaying={playback.isPlaying}
+        playbackRate={playback.playbackRate}
+        onPlay={playback.play}
+        onPause={playback.pause}
+        onStop={playback.stop}
+        onSeek={playback.seek}
+        onSetPlaybackRate={playback.setPlaybackRate}
+        onUpdateShots={handleUpdateShots}
+        onAddShot={handleAddShot}
+        onRemoveShot={handleRemoveShot}
+        onCreateFromToc={handleCreateFromToc}
+        defaultDuration={defaultShotDuration}
+        onSetDefaultDuration={setDefaultShotDuration}
+        activeShotIndex={playback.state?.activeShotIndex ?? -1}
+      />
     </div>
   )
 }

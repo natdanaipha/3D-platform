@@ -11,6 +11,7 @@ import {
   Trash2,
   Check,
   X,
+  FilmIcon,
 } from 'lucide-react'
 import type { TocSection } from '../types'
 
@@ -24,6 +25,7 @@ interface TableOfContentsDrawerProps {
   onRemoveSection: (id: string) => void
   onUpdateSection: (id: string, updates: Partial<TocSection>) => void
   onCameraPreview?: (camera: { x?: number; y?: number; z?: number; fov?: number }) => void
+  onAddToTimeline?: (sectionId: string) => void
 }
 
 export default function TableOfContentsDrawer({
@@ -36,6 +38,7 @@ export default function TableOfContentsDrawer({
   onRemoveSection,
   onUpdateSection,
   onCameraPreview,
+  onAddToTimeline,
 }: TableOfContentsDrawerProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -167,6 +170,15 @@ export default function TableOfContentsDrawer({
                           </span>
                         )}
                         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {onAddToTimeline && (
+                            <button
+                              onClick={() => onAddToTimeline(section.id)}
+                              className="p-1 text-neutral-400 hover:text-blue-600 hover:bg-blue-50 rounded"
+                              title="Add to Timeline"
+                            >
+                              <FilmIcon className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                           <button
                             onClick={() => startEdit(section.id, section.title)}
                             className="p-1 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded"

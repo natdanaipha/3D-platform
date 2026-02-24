@@ -1,0 +1,65 @@
+{
+  "sections": [
+    {
+      "id": "sec-1771841801184",
+      "title": "นิ่ง",
+      "animationName": "Idle"
+    },
+    {
+      "id": "sec-1771841812633",
+      "title": "เดิน",
+      "animationName": "Walking",
+      "animationSpeed": 0.5,
+      "cameraX": 6.5,
+      "cameraY": 3.5,
+      "cameraZ": 2,
+      "cameraFov": 63
+    },
+    {
+      "id": "sec-1771841843871",
+      "title": "โดด",
+      "animationSpeed": 0.5,
+      "cameraFov": 50,
+      "animationName": "Jump",
+      "cameraX": 0,
+      "cameraY": 7.5,
+      "cameraZ": 5
+    }
+  ],
+  "sequence": {
+    "id": "seq-default",
+    "name": "Sequence 1",
+    "shots": [
+      {
+        "shotId": "shot-1771842016861-r4h6",
+        "sectionId": "sec-1771841801184",
+        "duration": 3,
+        "transition": {
+          "type": "crossfade",
+          "duration": 0.5,
+          "easing": "easeInOut"
+        }
+      },
+      {
+        "shotId": "shot-1771842018472-asjw",
+        "sectionId": "sec-1771841812633",
+        "duration": 3,
+        "transition": {
+          "type": "crossfade",
+          "duration": 0.5,
+          "easing": "easeInOut"
+        }
+      },
+      {
+        "shotId": "shot-1771842019468-bfbl",
+        "sectionId": "sec-1771841843871",
+        "duration": 3,
+        "transition": {
+          "type": "crossfade",
+          "duration": 0.5,
+          "easing": "easeInOut"
+        }
+      }
+    ]
+  }
+}
