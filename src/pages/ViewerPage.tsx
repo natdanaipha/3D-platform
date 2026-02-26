@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import Viewer3D from '../components/Viewer3D'
 import ControlsSidebar from '../components/ControlsSidebar'
 import RightDrawer from '../components/RightDrawer'
+import { AnnotationToolDrawer } from '../components/annotation-tool'
 import TableOfContentsDrawer from '../components/TableOfContentsDrawer'
 import TCPreview from '../components/TCPreview'
 import TimelinePanel from '../components/TimelinePanel'
@@ -27,6 +28,8 @@ const defaultNodeTransform = (): NodeTransform => ({
 
 export default function ViewerPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const isAnnotationTool = location.pathname === '/annotation-tool'
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
 
   // Drawer controls state
@@ -566,6 +569,33 @@ export default function ViewerPage() {
         }}
         onAddToTimeline={handleAddShot}
       />
+      {isAnnotationTool ? (
+        <AnnotationToolDrawer
+          isOpen={rightDrawerOpen}
+          setIsOpen={setRightDrawerOpen}
+          notes={notes}
+          isPlacingNote={isPlacingNote}
+          onTogglePlaceNote={() => setIsPlacingNote(!isPlacingNote)}
+          onNoteUpdate={(id, updates) => handleNoteUpdate(id, updates)}
+          onNoteDelete={handleNoteDelete}
+          movingNoteId={movingNoteId}
+          onStartMoveNote={(id) => setMovingNoteId(id || null)}
+          textAnnotations={textAnnotations}
+          isPlacingText={isPlacingText}
+          onTogglePlaceText={() => setIsPlacingText(!isPlacingText)}
+          onTextUpdate={handleTextUpdate}
+          onTextDelete={handleTextDelete}
+          nodeNames={nodeNames}
+          partListItems={partListItems}
+          isAddingPart={isAddingPart}
+          setIsAddingPart={setIsAddingPart}
+          pendingPartNodeName={pendingPartNodeName}
+          setPendingPartNodeName={setPendingPartNodeName}
+          pendingPartLabel={pendingPartLabel}
+          setPendingPartLabel={setPendingPartLabel}
+          onPartListAdd={handlePartListAdd}
+        />
+      ) : (
       <RightDrawer
         isOpen={rightDrawerOpen}
         setIsOpen={setRightDrawerOpen}
@@ -591,6 +621,7 @@ export default function ViewerPage() {
         setPendingPartLabel={setPendingPartLabel}
         onPartListAdd={handlePartListAdd}
       />
+      )}
       <ControlsSidebar
         modelControls={{
           positionX, positionY, positionZ,
