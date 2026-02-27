@@ -44,6 +44,62 @@ export interface NoteAnnotation {
   attachedBoneOffset?: { x: number; y: number; z: number }
   /** สีหัวการ์ด/หมุด (hex เช่น #ef4444) — เปลี่ยนได้ใน modal แก้ไขโน้ต */
   color?: string
+  /** ชื่อหัวข้อภาษาอังกฤษ (สำหรับ Annotation Tool) */
+  titleEn?: string
+  /** โหมดการโต้ตอบ: On Click ฯลฯ (สำหรับ Annotation Tool) */
+  interactionMode?: string
+  /** สไตล์การแสดง: Text ฯลฯ (สำหรับ Annotation Tool) */
+  displayStyle?: string
+  /** จำนวนหน้าของคำอธิบายไทย (สำหรับ Annotation Tool: pages[0..n-1]=ไทย, pages[n..]=อังกฤษ) */
+  thaiPageCount?: number
+  /** แท็บรูปภาพ/วิดีโอ/เสียง: อัปโหลดไฟล์ (true) หรือไม่อัปโหลด (false) */
+  mediaUpload?: boolean
+  /** ประเภทไฟล์: รูปภาพ | วิดีโอ | เสียง */
+  mediaType?: 'image' | 'video' | 'audio'
+  /** วิดีโอ: แหล่งที่มา — 'url' หรือ 'upload' */
+  mediaSource?: 'url' | 'upload'
+  /** วิดีโอ: URL (เช่น YouTube) */
+  mediaUrl?: string
+  /** ชื่อไฟล์ที่อัปโหลด (รูป/เสียง) หรือแสดงใน UI */
+  mediaFileName?: string
+  /** ข้อมูลไฟล์สำหรับ preview (data URL หรือ object URL) */
+  mediaFileData?: string
+  /** เล่นอัตโนมัติ (true) หรือกดเพื่อเล่น (false) */
+  mediaAutoPlay?: boolean
+  /** เสียง: วนซ้ำ (true) หรือครั้งเดียว (false) */
+  mediaLoop?: boolean
+  /** ใช้ภาพหน้าปกแบบอัปโหลด (วิดีโอ/เสียง) */
+  mediaCoverEnabled?: boolean
+  /** ข้อมูลภาพหน้าปก (data URL) */
+  mediaCoverFileData?: string
+  /** สถานะ: ใช้งาน (true) */
+  mediaActive?: boolean
+  /** เส้น Annotation: ใช้ค่าเริ่มต้น (true) หรืออัปโหลดไฟล์ (false) */
+  lineUseDefault?: boolean
+  /** รูปทรงเริ่มต้นของเส้น: circle | square | triangle | star */
+  lineShape?: 'circle' | 'square' | 'triangle' | 'star'
+  /** ชื่อไฟล์มาร์กเกอร์ที่อัปโหลด */
+  lineMarkerFileName?: string
+  /** ข้อมูลไฟล์มาร์กเกอร์ (data URL) */
+  lineMarkerFileData?: string
+  /** ขนาดมาร์กเกอร์/เส้น (0–100) */
+  lineSize?: number
+  /** สีเส้น (hex) */
+  strokeColor?: string
+  /** ความทึบเส้น (0–100) */
+  strokeOpacity?: number
+  /** ตำแหน่งเส้น: center | inside | outside */
+  strokePosition?: 'center' | 'inside' | 'outside'
+  /** ความหนาเส้น */
+  strokeWeight?: number
+  /** จุดเริ่มต้น: none | arrow */
+  strokeStartPoint?: 'none' | 'arrow'
+  /** จุดสิ้นสุด: none | arrow */
+  strokeEndPoint?: 'none' | 'arrow'
+  /** สไตล์เส้น: solid | dashed | dotted */
+  strokeStyle?: 'solid' | 'dashed' | 'dotted'
+  /** การต่อเส้น: miter | round | bevel */
+  strokeJoin?: 'miter' | 'round' | 'bevel'
 }
 
 export interface TextAnnotation {

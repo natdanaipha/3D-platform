@@ -432,11 +432,13 @@ export default function ViewerPage() {
       positionY: payload.y,
       positionZ: payload.z,
       text: '',
-      pages: [{ content: '' }],
+      pages: [{ content: '' }, { content: '' }],
       offsetY: 0,
       cardWidth: 300,
       cardHeight: 240,
       createdAt: new Date(),
+      interactionMode: 'On Click',
+      displayStyle: 'Text',
       ...(payload.attachedBoneName && payload.attachedBoneOffset && {
         attachedBoneName: payload.attachedBoneName,
         attachedBoneOffset: payload.attachedBoneOffset,
@@ -576,10 +578,10 @@ export default function ViewerPage() {
           notes={notes}
           isPlacingNote={isPlacingNote}
           onTogglePlaceNote={() => setIsPlacingNote(!isPlacingNote)}
-          onNoteUpdate={(id, updates) => handleNoteUpdate(id, updates)}
-          onNoteDelete={handleNoteDelete}
           movingNoteId={movingNoteId}
           onStartMoveNote={(id) => setMovingNoteId(id || null)}
+          onNoteUpdate={(id, updates) => handleNoteUpdate(id, updates)}
+          onNoteDelete={handleNoteDelete}
           textAnnotations={textAnnotations}
           isPlacingText={isPlacingText}
           onTogglePlaceText={() => setIsPlacingText(!isPlacingText)}
@@ -823,6 +825,7 @@ export default function ViewerPage() {
           onNoteUpdate={handleNoteUpdate}
           onNoteDelete={handleNoteDelete}
           onNoteEdit={handleOpenNoteEdit}
+          showEditButtonOnNoteCards={!isAnnotationTool}
           focusNotePosition={focusNotePosition}
           onFocusNoteDone={() => setFocusNotePosition(null)}
           movingNoteId={movingNoteId}

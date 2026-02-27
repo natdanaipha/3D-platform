@@ -15,12 +15,16 @@ const DEFAULT_NOTE_COLOR = '#ef4444'
 
 interface NoteCardProps {
   id: string
-  /** หัวข้อการ์ด (แก้ไขได้, ไม่ใส่ก็ได้ — ไม่ส่งมาจะไม่แสดงหัวข้อ) */
+  /** หัวข้อการ์ด (ภาษาไทย) */
   title?: string
+  /** ชื่อหัวข้อภาษาอังกฤษ (เมื่อมี thaiPageCount ใช้สลับตามปุ่มภาษา) */
+  titleEn?: string
   /** เนื้อหาแบบเก่า (ข้อความเดียว) */
   content?: string
   /** เนื้อหาแบบหลายหน้า (HTML ได้) */
   pages?: NotePage[]
+  /** จำนวนหน้าของคำอธิบายไทย (เมื่อมี = แยกไทย/อังกฤษ ไม่รวมกัน; ไม่ส่ง = แสดงทุกหน้ารวม) */
+  thaiPageCount?: number
   /** สีหัวการ์ด/เส้นเชื่อม (hex) */
   color?: string
   position3D: [number, number, number]
@@ -31,12 +35,29 @@ interface NoteCardProps {
   onPositionChange: (pos: { x: number; y: number }) => void
   onSizeChange?: (size: { width: number; height: number }) => void
   onDelete: () => void
-  onEdit: () => void
+  onEdit?: () => void
+  /** แสดงปุ่มปากกา (แก้ไข) ในหัวการ์ด — ค่าเริ่มต้น true สำหรับ Intro / Table of Contents */
+  showEditButton?: boolean
+  /** 'bubble' = หน้าตาแบบฟอง (Annotation Tool), 'default' = การ์ดหัวแดง */
+  variant?: 'default' | 'bubble'
 }
 
 export default function NoteCard(props: NoteCardProps) {
-  const { id, title, content = '', pages: propPages, color = DEFAULT_NOTE_COLOR, position2D, width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT, onPositionChange, onSizeChange, onDelete, onEdit } = props
+  const { id, title, titleEn, content = '', pages: propPages, thaiPageCount: propThaiPageCount, color = DEFAULT_NOTE_COLOR, position2D, width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT, onPositionChange, onSizeChange, onDelete, onEdit, showEditButton = true, variant = 'default' } = props
   const pages: NotePage[] = propPages?.length ? propPages : [{ content: content || '' }]
+  const hasLangSplit = propThaiPageCount != null && propThaiPageCount >= 1
+  const thaiPages = hasLangSplit ? pages.slice(0, propThaiPageCount) : []
+  const englishPages = hasLangSplit ? pages.slice(propThaiPageCount) : []
+  const withContent = (arr: NotePage[]) => arr.filter((p) => p && (p.content || '').trim().length > 0)
+  const displayPagesTh: NotePage[] = hasLangSplit ? (withContent(thaiPages).length >= 1 ? withContent(thaiPages) : [thaiPages[0] || { content: '' }]) : []
+  const displayPagesEn: NotePage[] = hasLangSplit ? (withContent(englishPages).length >= 1 ? withContent(englishPages) : [englishPages[0] || { content: '' }]) : []
+  const displayPages: NotePage[] = hasLangSplit
+    ? [] // ใช้ displayPagesTh / displayPagesEn ตาม viewLang
+    : (() => {
+        const withContentAll = pages.filter((p) => p && (p.content || '').trim().length > 0)
+        return withContentAll.length >= 1 ? withContentAll : [pages[0] || { content: '' }]
+      })()
+  const [viewLang, setViewLang] = useState<'th' | 'en'>('th')
   const [currentPageIndex, setCurrentPageIndex] = useState(0)
   const [viewOpen, setViewOpen] = useState(false)
   const [viewPageIndex, setViewPageIndex] = useState(0)
@@ -46,9 +67,24 @@ export default function NoteCard(props: NoteCardProps) {
   const resizeStartRef = useRef({ x: 0, y: 0, w: width, h: height })
   const cardRef = useRef<HTMLDivElement>(null)
 
-  const currentPage = pages[currentPageIndex]
+  const activeDisplayPages: NotePage[] = hasLangSplit
+    ? (viewLang === 'th' ? displayPagesTh : displayPagesEn)
+    : displayPages
+  const currentPage = activeDisplayPages[currentPageIndex]
   const html = currentPage?.content ?? ''
-  const hasMultiplePages = pages.length > 1
+  const hasMultiplePages = activeDisplayPages.length > 1
+  /** หัวข้อที่แสดงตามภาษาที่เลือก (ไทย = title, อังกฤษ = titleEn) */
+  const displayTitle = hasLangSplit && viewLang === 'en' ? (titleEn ?? title ?? '') : (title ?? '')
+
+  useEffect(() => {
+    setCurrentPageIndex(0)
+    setViewPageIndex(0)
+  }, [viewLang])
+
+  useEffect(() => {
+    setCurrentPageIndex((i) => Math.min(i, Math.max(0, activeDisplayPages.length - 1)))
+    setViewPageIndex((i) => Math.min(i, Math.max(0, activeDisplayPages.length - 1)))
+  }, [activeDisplayPages.length])
 
   /** ขนาดโซนมุมล่างขวา (px) — คลิกในโซนนี้ = ปรับขนาด, นอกโซน = ลากย้าย */
   const RESIZE_ZONE = 48
@@ -117,23 +153,29 @@ export default function NoteCard(props: NoteCardProps) {
   }, [isDragging, isResizing, dragOffset, width, height, onPositionChange, onSizeChange])
 
   useEffect(() => {
-    if (!viewOpen || pages.length <= 1) return
+    if (!viewOpen || activeDisplayPages.length <= 1) return
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft') {
         setViewPageIndex((i) => Math.max(0, i - 1))
       } else if (e.key === 'ArrowRight') {
-        setViewPageIndex((i) => Math.min(pages.length - 1, i + 1))
+        setViewPageIndex((i) => Math.min(activeDisplayPages.length - 1, i + 1))
       }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [viewOpen, pages.length])
+  }, [viewOpen, activeDisplayPages.length])
+
+  const isBubble = variant === 'bubble'
 
   return (
     <div
       ref={cardRef}
       data-annotation-id={id}
-      className={`fixed bg-white rounded-lg shadow-xl z-50 overflow-hidden flex flex-col ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} ${isResizing ? 'select-none' : ''}`}
+      className={`fixed z-50 overflow-hidden flex flex-col ${isDragging ? 'cursor-grabbing' : 'cursor-grab'} ${isResizing ? 'select-none' : ''} ${
+        isBubble
+          ? 'rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100/90 shadow-lg ring-1 ring-black/5'
+          : 'bg-white rounded-lg shadow-xl'
+      }`}
       style={{
         left: `${position2D.x}px`,
         top: `${position2D.y}px`,
@@ -151,34 +193,86 @@ export default function NoteCard(props: NoteCardProps) {
       }}
       onMouseDown={handleMouseDown}
     >
-      <div
-        className="text-white p-3 rounded-t-lg flex items-center justify-between"
-        style={{ backgroundColor: color }}
-      >
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <GripVertical className="w-4 h-4 opacity-70 shrink-0" />
-          {title != null && title.trim() !== '' && (
-            <span className="text-lg truncate">{title}</span>
-          )}
+      {/* หัวการ์ด: แบบเดิม (แดง) หรือแบบ bubble (แถบบาง + ปุ่ม) */}
+      {isBubble ? (
+        <div className="flex items-center justify-between gap-2 px-3 py-2 min-h-[40px] border-b border-slate-200/60">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <GripVertical className="w-4 h-4 text-slate-400 shrink-0" />
+            {displayTitle.trim() !== '' && (
+              <span className="text-sm font-semibold text-slate-800 truncate">{displayTitle}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setViewPageIndex(currentPageIndex); setViewOpen(true) }}
+              className="p-1.5 rounded-md text-slate-500 hover:bg-slate-200/70 hover:text-slate-700"
+              title="ดูเนื้อหาแต่ละหน้า"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+            {showEditButton && onEdit && (
+              <button onClick={onEdit} className="p-1.5 rounded-md text-slate-500 hover:bg-slate-200/70 hover:text-slate-700" title="แก้ไข">
+                <Edit2 className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={onDelete} className="p-1.5 rounded-md text-slate-500 hover:bg-slate-200/70 hover:text-red-600" title="ลบ">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); setViewPageIndex(0); setViewOpen(true) }}
-            className="p-1 hover:bg-white/20 rounded"
-            title="ดูเนื้อหาแต่ละหน้า"
-          >
-            <Eye className="w-4 h-4" />
-          </button>
-          <button onClick={onEdit} className="p-1 hover:bg-white/20 rounded" title="แก้ไข">
-            <Edit2 className="w-4 h-4" />
-          </button>
-          <button onClick={onDelete} className="p-1 hover:bg-white/20 rounded" title="ลบ">
-            <X className="w-4 h-4" />
-          </button>
+      ) : (
+        <div
+          className="text-white p-3 rounded-t-lg flex items-center justify-between"
+          style={{ backgroundColor: color }}
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <GripVertical className="w-4 h-4 opacity-70 shrink-0" />
+            {displayTitle.trim() !== '' && (
+              <span className="text-lg truncate">{displayTitle}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setViewPageIndex(currentPageIndex); setViewOpen(true) }}
+              className="p-1 hover:bg-white/20 rounded"
+              title="ดูเนื้อหาแต่ละหน้า"
+            >
+              <Eye className="w-4 h-4" />
+            </button>
+            {showEditButton && onEdit && (
+              <button onClick={onEdit} className="p-1 hover:bg-white/20 rounded" title="แก้ไข">
+                <Edit2 className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={onDelete} className="p-1 hover:bg-white/20 rounded" title="ลบ">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-      </div>
-      <div className="note-card-body p-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden overflow-x-clip">
+      )}
+
+      <div className={`note-card-body flex-1 min-h-0 overflow-y-auto overflow-x-hidden overflow-x-clip ${isBubble ? 'px-4 py-3' : 'p-4'}`}>
+        {/* ปุ่ม TH/EN โชว์เฉพาะการ์ดแบบ default (Intro, Table of Contents) — หน้า Annotation Tool (bubble) ไม่แสดง จะมีในโมดัลเมื่อกดลูกตา */}
+        {hasLangSplit && !isBubble && (
+          <div className="flex items-center gap-1 mb-2 pb-2 border-b border-gray-200">
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setViewLang('th'); setCurrentPageIndex(0) }}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${viewLang === 'th' ? 'bg-primary text-primary-foreground' : 'bg-gray-200 hover:bg-gray-300'}`}
+            >
+              TH
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setViewLang('en'); setCurrentPageIndex(0) }}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium ${viewLang === 'en' ? 'bg-primary text-primary-foreground' : 'bg-gray-200 hover:bg-gray-300'}`}
+            >
+              EN
+            </button>
+          </div>
+        )}
         {hasMultiplePages && (
           <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-gray-200">
             <button
@@ -189,28 +283,36 @@ export default function NoteCard(props: NoteCardProps) {
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
-            <span className="text-xs text-gray-500">หน้า {currentPageIndex + 1} / {pages.length}</span>
+            <span className="text-xs text-gray-500">หน้า {currentPageIndex + 1} / {activeDisplayPages.length}</span>
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setCurrentPageIndex((i) => Math.min(pages.length - 1, i + 1)) }}
+              onClick={(e) => { e.stopPropagation(); setCurrentPageIndex((i) => Math.min(activeDisplayPages.length - 1, i + 1)) }}
               className="p-1 rounded hover:bg-gray-200 disabled:opacity-40"
-              disabled={currentPageIndex === pages.length - 1}
+              disabled={currentPageIndex === activeDisplayPages.length - 1}
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         )}
-        <div
-          className="text-gray-800 text-sm leading-relaxed prose prose-sm max-w-none prose-img:max-w-full prose-video:max-w-full [&:has(iframe)_iframe]:bg-transparent"
-          dangerouslySetInnerHTML={{ __html: html || '<span class="text-gray-400">(ไม่มีข้อความ)</span>' }}
-        />
+        {isBubble ? (
+          <div
+            className="text-slate-700 text-sm leading-relaxed prose prose-sm max-w-none prose-img:max-w-full prose-video:max-w-full [&:has(iframe)_iframe]:bg-transparent"
+            style={{ textShadow: '0 1px 2px rgba(255,255,255,0.6)' }}
+            dangerouslySetInnerHTML={{ __html: html || '<span class="text-slate-400">(ไม่มีข้อความ)</span>' }}
+          />
+        ) : (
+          <div
+            className="text-gray-800 text-sm leading-relaxed prose prose-sm max-w-none prose-img:max-w-full prose-video:max-w-full [&:has(iframe)_iframe]:bg-transparent"
+            dangerouslySetInnerHTML={{ __html: html || '<span class="text-gray-400">(ไม่มีข้อความ)</span>' }}
+          />
+        )}
       </div>
       <div
         data-resize-handle
         className={`absolute bottom-0 right-0 z-10 flex items-center justify-end pb-1.5 pr-1.5 pointer-events-none ${onSizeChange ? '' : 'opacity-50'}`}
         title={onSizeChange ? 'ลากเพื่อขยาย/ย่อกล่อง' : undefined}
       >
-        <span className="inline-flex items-center justify-center w-7 h-7 rounded-tl-md bg-black/5 text-gray-400 shadow-sm" title="ลากเพื่อขยาย/ย่อ">
+        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-tl-md shadow-sm ${isBubble ? 'bg-slate-200/60 text-slate-500' : 'bg-black/5 text-gray-400'}`} title="ลากเพื่อขยาย/ย่อ">
           <Maximize2 className="w-3.5 h-3.5 shrink-0 -rotate-90" strokeWidth={2.5} aria-hidden />
         </span>
       </div>
@@ -235,27 +337,45 @@ export default function NoteCard(props: NoteCardProps) {
             >
               <DialogHeader className="flex flex-col gap-1">
                 <DialogTitle>รายละเอียดเนื้อหา</DialogTitle>
-                {title != null && title.trim() !== '' && (
-                  <p className="text-sm font-medium text-foreground mt-0.5">หัวข้อ: {title}</p>
+                {displayTitle.trim() !== '' && (
+                  <p className="text-sm font-medium text-foreground mt-0.5">หัวข้อ: {displayTitle}</p>
                 )}
               </DialogHeader>
               <DialogBody className="flex flex-col min-h-0 flex-1 overflow-hidden p-0">
+                {hasLangSplit && (
+                  <div className="flex items-center gap-1 px-6 pt-4 pb-2 border-b bg-muted/20">
+                    <button
+                      type="button"
+                      onClick={() => { setViewLang('th'); setViewPageIndex(0) }}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium ${viewLang === 'th' ? 'bg-primary text-primary-foreground' : 'bg-background border hover:bg-muted'}`}
+                    >
+                      ไทย
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setViewLang('en'); setViewPageIndex(0) }}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium ${viewLang === 'en' ? 'bg-primary text-primary-foreground' : 'bg-background border hover:bg-muted'}`}
+                    >
+                      English
+                    </button>
+                  </div>
+                )}
                 <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-4">
                   <div className="border rounded-lg p-4 bg-muted/30 min-w-0">
                     <h4 className="text-sm font-medium text-muted-foreground mb-3">
-                      หน้า {viewPageIndex + 1} / {pages.length}
+                      หน้า {viewPageIndex + 1} / {activeDisplayPages.length}
                     </h4>
                     <div
                       className="note-detail-modal-prose text-gray-800 text-sm leading-relaxed prose prose-sm max-w-none prose-img:max-w-full prose-img:w-full prose-video:max-w-full [&:has(iframe)_iframe]:bg-transparent"
                       dangerouslySetInnerHTML={{
-                        __html: pages[viewPageIndex]?.content?.trim()
-                          ? pages[viewPageIndex].content
+                        __html: activeDisplayPages[viewPageIndex]?.content?.trim()
+                          ? activeDisplayPages[viewPageIndex].content
                           : '<span class="text-gray-400">(ไม่มีข้อความ)</span>',
                       }}
                     />
                   </div>
                 </div>
-                {pages.length > 1 && (
+                {activeDisplayPages.length > 1 && (
                   <div className="flex items-center justify-between gap-2 px-6 py-3 border-t bg-muted/20 shrink-0">
                     <button
                       type="button"
@@ -266,12 +386,12 @@ export default function NoteCard(props: NoteCardProps) {
                       ← ก่อนหน้า
                     </button>
                     <span className="text-sm text-muted-foreground">
-                      หน้า {viewPageIndex + 1} / {pages.length}
+                      หน้า {viewPageIndex + 1} / {activeDisplayPages.length}
                     </span>
                     <button
                       type="button"
-                      onClick={() => setViewPageIndex((i) => Math.min(pages.length - 1, i + 1))}
-                      disabled={viewPageIndex === pages.length - 1}
+                      onClick={() => setViewPageIndex((i) => Math.min(activeDisplayPages.length - 1, i + 1))}
+                      disabled={viewPageIndex === activeDisplayPages.length - 1}
                       className="px-3 py-1.5 rounded-md border bg-background hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed text-sm"
                     >
                       ถัดไป →

@@ -1059,6 +1059,8 @@ interface Viewer3DProps {
   onNoteUpdate: (id: string, updates: Partial<NoteAnnotation>) => void
   onNoteDelete: (id: string) => void
   onNoteEdit?: (id: string) => void
+  /** true = แสดงปุ่มปากกาในการ์ด (Intro, Table of Contents), false = ไม่แสดง (Annotation Tool) */
+  showEditButtonOnNoteCards?: boolean
   /** เมื่อกด "ไปที่หมุด" ใน Annotations ให้เล็งกล้องไปที่ตำแหน่งนี้ */
   focusNotePosition: { x: number; y: number; z: number } | null
   onFocusNoteDone: () => void
@@ -1144,14 +1146,22 @@ function TextAnnotations({ textAnnotations }: { textAnnotations: TextAnnotation[
 }
 
 // หา bone ที่ใกล้จุด world มากที่สุดจาก model group (สำหรับผูกหมุดให้เคลื่อนตาม animation)
+// ถ้าไกลเกิน maxDistance จะไม่ผูก — หมุดจะอยู่ที่จุดนั้นคงที่ (ไม่ติด animation)
+/** ตอนคลิกปักบนโมเดล: ใช้ระยะเผื่อให้จุดบนผิวโมเดลยังผูกได้ */
+const MAX_ATTACH_DISTANCE_PLACE = 2.0
+/** ตอนปล่อยหลังลาก: ใช้ระยะสั้น เพื่อให้ย้ายออกจากโมเดลแล้วไม่ติด animation */
+const MAX_ATTACH_DISTANCE_DRAG = 1.0
+
 function findClosestBoneAttachment(
   modelGroup: THREE.Group,
-  worldPoint: THREE.Vector3
+  worldPoint: THREE.Vector3,
+  maxDistance: number = MAX_ATTACH_DISTANCE_DRAG
 ): { boneName: string; offset: { x: number; y: number; z: number } } | null {
   modelGroup.updateMatrixWorld(true)
   let closestBone: THREE.Bone | null = null
   let closestDistSq = Infinity
   const tempPos = new THREE.Vector3()
+  const maxDistSq = maxDistance * maxDistance
 
   const traverse = (obj: THREE.Object3D) => {
     const mesh = obj as THREE.SkinnedMesh
@@ -1169,7 +1179,7 @@ function findClosestBoneAttachment(
   }
   traverse(modelGroup)
 
-  if (!closestBone) return null
+  if (!closestBone || closestDistSq > maxDistSq) return null
   const bone = closestBone as THREE.Bone
   const inv = new THREE.Matrix4().copy(bone.matrixWorld).invert()
   const localOffset = worldPoint.clone().applyMatrix4(inv)
@@ -1218,9 +1228,9 @@ function ClickHandler({
       if (modelGroup) {
         const intersects = raycaster.current.intersectObject(modelGroup, true)
         if (intersects.length > 0) {
-          const point = intersects[0].point
+          const point = intersects[0].point.clone()
           if (isPlacingNote) {
-            const attachment = findClosestBoneAttachment(modelGroup, point)
+            const attachment = findClosestBoneAttachment(modelGroup, point, MAX_ATTACH_DISTANCE_PLACE)
             onNotePlace({
               x: point.x,
               y: point.y,
@@ -1237,7 +1247,7 @@ function ClickHandler({
         }
       }
 
-      // If no model intersection, try to find model in scene
+      // If no model intersection, try to find model in scene (fallback)
       const allObjects: THREE.Object3D[] = []
       scene.traverse((obj) => {
         if (obj.type === 'Mesh' || obj.type === 'Group') {
@@ -1248,9 +1258,22 @@ function ClickHandler({
       if (allObjects.length > 0) {
         const intersects = raycaster.current.intersectObjects(allObjects, true)
         if (intersects.length > 0) {
-          const point = intersects[0].point
+          const point = intersects[0].point.clone()
           if (isPlacingNote) {
-            onNotePlace({ x: point.x, y: point.y, z: point.z })
+            const hitObject = intersects[0].object
+            const groupForBone = modelRef.current?.groupRef && modelRef.current.groupRef.contains(hitObject)
+              ? modelRef.current.groupRef
+              : null
+            const attachment = groupForBone ? findClosestBoneAttachment(groupForBone, point, MAX_ATTACH_DISTANCE_PLACE) : null
+            onNotePlace({
+              x: point.x,
+              y: point.y,
+              z: point.z,
+              ...(attachment && {
+                attachedBoneName: attachment.boneName,
+                attachedBoneOffset: attachment.offset,
+              }),
+            })
           } else if (isPlacingText) {
             onTextPlace({ x: point.x, y: point.y, z: point.z })
           }
@@ -1365,6 +1388,7 @@ export default function Viewer3D({
   onNoteUpdate,
   onNoteDelete,
   onNoteEdit,
+  showEditButtonOnNoteCards = false,
   focusNotePosition,
   onFocusNoteDone,
   movingNoteId,
@@ -1409,6 +1433,7 @@ export default function Viewer3D({
           onNoteUpdate={onNoteUpdate}
           onNoteDelete={onNoteDelete}
           onNoteEdit={onNoteEdit}
+          showEditButtonOnNoteCards={showEditButtonOnNoteCards}
         />
       )}
       <Canvas shadows>
@@ -1503,7 +1528,24 @@ export default function Viewer3D({
                   attachedBoneOffset: undefined,
                 })
               }
-              onMoveEnd={onEndMoveNote}
+              onMoveEnd={(finalPosition) => {
+                if (finalPosition && movingNoteId === note.id && modelRef.current?.groupRef) {
+                  const attachment = findClosestBoneAttachment(
+                    modelRef.current.groupRef,
+                    new THREE.Vector3(finalPosition.x, finalPosition.y, finalPosition.z)
+                  )
+                  if (attachment) {
+                    onNoteUpdate(note.id, {
+                      positionX: finalPosition.x,
+                      positionY: finalPosition.y,
+                      positionZ: finalPosition.z,
+                      attachedBoneName: attachment.boneName,
+                      attachedBoneOffset: attachment.offset,
+                    })
+                  }
+                }
+                onEndMoveNote()
+              }}
               onDragStart={() => setControlsEnabled(false)}
               onDragEnd={() => setControlsEnabled(true)}
             />
