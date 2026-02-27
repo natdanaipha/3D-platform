@@ -114,11 +114,62 @@ export interface TextAnnotation {
   createdAt: Date
 }
 
+/** Trim range for a single animation item */
+export interface TrimRange {
+  sourceStartSec: number
+  sourceEndSec: number
+  trimInSec: number
+  trimOutSec: number
+}
+
+/** Camera position + FOV snapshot */
+export interface CameraState {
+  x: number
+  y: number
+  z: number
+  fov: number
+}
+
+/** Per-item camera override (opt-in) */
+export interface CameraOverride {
+  enabled: boolean
+  camera: CameraState
+}
+
+/** Styling rule applied to non-selected nodes/materials */
+export interface NonSelectedStyle {
+  type: 'desaturate' | 'tint' | 'overrideColor'
+  color: string
+  intensity: number
+}
+
+/** Per-item highlight override (node/material emphasis) */
+export interface HighlightOverride {
+  enabled: boolean
+  mode: 'node' | 'material' | 'both'
+  selectedNodeIds: string[]
+  selectedMaterialIds: string[]
+  nonSelectedStyle: NonSelectedStyle
+}
+
+/** One animation entry inside a section's animation stack */
+export interface AnimationItem {
+  id: string
+  animationClipName: string
+  name?: string
+  speed: number
+  trim: TrimRange
+  cameraOverride?: CameraOverride
+  highlight?: HighlightOverride
+}
+
 /** Section สำหรับ Table of Contents */
 export interface TocSection {
   id: string
   title: string
+  /** @deprecated ใช้ animations[] แทน – kept for migration */
   animationName?: string
+  /** @deprecated */
   animationSpeed?: number
   cameraX?: number
   cameraY?: number
@@ -126,6 +177,8 @@ export interface TocSection {
   cameraFov?: number
   /** รายชื่อ node ที่จะ highlight เมื่อเข้า section นี้ */
   highlightNodes?: string[]
+  /** Animation stack – เล่น sequential top→bottom */
+  animations?: AnimationItem[]
 }
 
 /** รายการ Part Names: เลือก node จากโมเดล แล้วตั้งชื่อ (เช่น Head, Leg) */

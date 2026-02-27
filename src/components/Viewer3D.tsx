@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera, Environment, Grid, useGLTF, useAnimations, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js'
-import type { NodeTransform, NoteAnnotation, TextAnnotation } from '../types'
+import type { NodeTransform, NoteAnnotation, TextAnnotation, HighlightOverride } from '../types'
 import NoteMarker3D from './annotations/NoteMarker3D'
 import NoteOverlay from './annotations/NoteOverlay'
 
@@ -55,6 +55,8 @@ interface ModelProps {
   onNodeNamesChange: (names: string[], initialTransforms?: Record<string, NodeTransform>) => void
   /** เมื่อมีค่า โหนดเหล่านี้และลูกจะแสดงสีปกติ ส่วนอื่นเป็นสีเทา */
   highlightedNodeNames: string[]
+  /** Per-item highlight override (from playback) — takes precedence over highlightedNodeNames */
+  activeItemHighlight?: HighlightOverride | null
 }
 
 // Component to load and display GLB model
@@ -101,6 +103,7 @@ const Model = forwardRef<any, ModelProps>(({
   nodeTransforms,
   onNodeNamesChange,
   highlightedNodeNames,
+  activeItemHighlight,
 }, ref) => {
   const { scene, animations } = useGLTF(url)
   const groupRef = useRef<THREE.Group>(null)
@@ -444,6 +447,7 @@ const Model = forwardRef<any, ModelProps>(({
   }, [scene, nodeTransforms])
 
   // Highlight nodes: โหนดที่เลือกมีสีเดิม ส่วนอื่นเป็นสีเทา (รองรับหลาย node)
+  // Also handles per-item highlight override (activeItemHighlight takes precedence)
   useEffect(() => {
     if (!scene) return
 
@@ -462,12 +466,33 @@ const Model = forwardRef<any, ModelProps>(({
 
     restoreGrayed()
 
-    if (highlightedNodeNames.length === 0) return
+    // Determine active highlight source
+    const itemHL = activeItemHighlight
+    const useItemHighlight = itemHL?.enabled &&
+      (itemHL.selectedNodeIds.length > 0 || itemHL.selectedMaterialIds.length > 0)
+
+    // If per-item highlight is active, use it; otherwise fall back to section-level
+    if (!useItemHighlight && highlightedNodeNames.length === 0) return
 
     const highlightedMeshes = new Set<THREE.Mesh>()
     const boneIndices: { index: number; skeleton: THREE.Skeleton }[] = []
 
-    for (const nodeName of highlightedNodeNames) {
+    // Determine which node names to use for highlight
+    const effectiveNodeNames = useItemHighlight
+      ? (itemHL!.mode === 'node' || itemHL!.mode === 'both' ? itemHL!.selectedNodeIds : [])
+      : highlightedNodeNames
+
+    // Material-based selection (per-item highlight only)
+    const selectedMaterialNames = useItemHighlight && (itemHL!.mode === 'material' || itemHL!.mode === 'both')
+      ? new Set(itemHL!.selectedMaterialIds)
+      : new Set<string>()
+
+    // Non-selected style for per-item highlight
+    const nonSelectedColor = useItemHighlight ? itemHL!.nonSelectedStyle.color : '#484848'
+    const nonSelectedIntensity = useItemHighlight ? itemHL!.nonSelectedStyle.intensity : 0.72
+    const nonSelectedType = useItemHighlight ? itemHL!.nonSelectedStyle.type : 'desaturate'
+
+    for (const nodeName of effectiveNodeNames) {
       let highlightRoot: THREE.Object3D | undefined
       scene.traverse((obj) => {
         if (obj.name === nodeName) highlightRoot = obj
@@ -497,7 +522,29 @@ const Model = forwardRef<any, ModelProps>(({
       }
     }
 
+    // Material-based mesh selection: meshes whose material name is in selectedMaterialNames
+    if (selectedMaterialNames.size > 0) {
+      scene.traverse((obj) => {
+        if (!(obj as THREE.Mesh).isMesh) return
+        const mesh = obj as THREE.Mesh
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+        for (const mat of mats) {
+          if (mat && selectedMaterialNames.has(mat.name)) {
+            highlightedMeshes.add(mesh)
+            break
+          }
+        }
+      })
+    }
+
     if (highlightedMeshes.size === 0 && boneIndices.length > 0) {
+      // Parse non-selected color for use in shader
+      const _c = new THREE.Color(nonSelectedColor)
+      const _r = _c.r.toFixed(4)
+      const _g = _c.g.toFixed(4)
+      const _b = _c.b.toFixed(4)
+      const _int = nonSelectedIntensity.toFixed(4)
+
       const boneIndexSet = new Map<THREE.Skeleton, Set<number>>()
       for (const { index, skeleton } of boneIndices) {
         if (!boneIndexSet.has(skeleton)) boneIndexSet.set(skeleton, new Set())
@@ -532,13 +579,21 @@ const Model = forwardRef<any, ModelProps>(({
             '#include <beginnormal_vertex>',
             'vHighlightWeight = highlightWeight;\n#include <beginnormal_vertex>',
           )
+          const dimFragment = nonSelectedType === 'overrideColor'
+            ? `vec3 _nsColor = vec3(${_r}, ${_g}, ${_b});
+vec3 _desat = mix(gl_FragColor.rgb, _nsColor, ${_int});
+gl_FragColor.rgb = mix(_desat, gl_FragColor.rgb, vHighlightWeight);`
+            : nonSelectedType === 'tint'
+            ? `vec3 _tintColor = vec3(${_r}, ${_g}, ${_b});
+vec3 _desat = mix(gl_FragColor.rgb, _tintColor, ${_int} * 0.5);
+gl_FragColor.rgb = mix(_desat, gl_FragColor.rgb, vHighlightWeight);`
+            : `float _luma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
+vec3 _nsColor = vec3(${_r}, ${_g}, ${_b});
+vec3 _desat = mix(vec3(_luma), _nsColor, ${_int});
+gl_FragColor.rgb = mix(_desat, gl_FragColor.rgb, vHighlightWeight);`
           shader.fragmentShader = 'varying float vHighlightWeight;\n' + shader.fragmentShader.replace(
             '#include <dithering_fragment>',
-            `float _luma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
-vec3 _darkGray = vec3(0.28, 0.28, 0.28);
-vec3 _desat = mix(gl_FragColor.rgb, _darkGray, 0.72);
-gl_FragColor.rgb = mix(_desat, gl_FragColor.rgb, vHighlightWeight);
-#include <dithering_fragment>`,
+            dimFragment + '\n#include <dithering_fragment>',
           )
         }
         mesh.material = mat
@@ -547,18 +602,27 @@ gl_FragColor.rgb = mix(_desat, gl_FragColor.rgb, vHighlightWeight);
       return () => restoreGrayed()
     }
 
-    if (highlightedMeshes.size === 0) return
+    if (highlightedMeshes.size === 0 && selectedMaterialNames.size === 0) return
 
-    const applyDesaturateShader = (mat: THREE.Material) => {
+    // Build non-selected material override function using dynamic color/intensity
+    const _c2 = new THREE.Color(nonSelectedColor)
+    const _r2 = _c2.r.toFixed(4)
+    const _g2 = _c2.g.toFixed(4)
+    const _b2 = _c2.b.toFixed(4)
+    const _int2 = nonSelectedIntensity.toFixed(4)
+
+    const applyNonSelectedShader = (mat: THREE.Material) => {
       const m = mat as THREE.MeshStandardMaterial
       m.onBeforeCompile = (shader: THREE.WebGLProgramParametersWithUniforms) => {
+        const fragment = nonSelectedType === 'overrideColor'
+          ? `gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(${_r2}, ${_g2}, ${_b2}), ${_int2});`
+          : nonSelectedType === 'tint'
+          ? `gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(${_r2}, ${_g2}, ${_b2}), ${_int2} * 0.5);`
+          : `float _desatLuma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
+gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(vec3(_desatLuma), vec3(${_r2}, ${_g2}, ${_b2}), 0.5), ${_int2});`
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <dithering_fragment>',
-          `float _desatLuma = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));
-vec3 _gray = vec3(_desatLuma);
-vec3 _darkGray = vec3(0.28, 0.28, 0.28);
-gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
-#include <dithering_fragment>`,
+          fragment + '\n#include <dithering_fragment>',
         )
       }
       return m
@@ -571,8 +635,8 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
       const original = mesh.material
       if (!original) return
       const grayMaterial = Array.isArray(original)
-        ? (original as THREE.Material[]).map((m: THREE.Material) => applyDesaturateShader(m.clone()))
-        : applyDesaturateShader((original as THREE.Material).clone())
+        ? (original as THREE.Material[]).map((m: THREE.Material) => applyNonSelectedShader(m.clone()))
+        : applyNonSelectedShader((original as THREE.Material).clone())
       mesh.material = grayMaterial as THREE.Material
       grayMaterialRestoreRef.current.set(mesh, { material: original as THREE.Material | THREE.Material[] })
     })
@@ -580,7 +644,7 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
     return () => {
       restoreGrayed()
     }
-  }, [scene, highlightedNodeNames])
+  }, [scene, highlightedNodeNames, activeItemHighlight])
 
   console.log("animations : ", animations);
   // console.log('actions : ', actions);
@@ -598,7 +662,7 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
   // Function to play next animation in sequence
   const playNextInSequence = () => {
     if (animationMode !== 'sequence' || animationSequence.length === 0) return
-    
+
     const nextIndex = sequenceIndexRef.current + 1
     if (nextIndex >= animationSequence.length) {
       if (animationLoop) {
@@ -629,6 +693,10 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
       nextAction.play()
     }
   }
+
+  // Ref tracking the action used by section/item trim playback (separate from legacy play)
+  const trimActionRef = useRef<THREE.AnimationAction | null>(null)
+  const trimOutRef = useRef<number>(0)
 
   // Expose animation control methods and groupRef
   useImperativeHandle(ref, () => ({
@@ -665,6 +733,56 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
     },
     get groupRef() {
       return groupRef.current
+    },
+    // --- Section / Item trim playback API ---
+    /** Play a clip from trimIn→trimOut at given speed */
+    playClipTrimmed: (clipName: string, trimIn: number, trimOut: number, speed: number) => {
+      // stop any existing trim playback
+      if (trimActionRef.current) {
+        trimActionRef.current.stop()
+        trimActionRef.current = null
+      }
+      const action = actions[clipName]
+      if (!action) return
+      trimOutRef.current = trimOut
+      action.setLoop(THREE.LoopOnce, 0)
+      action.clampWhenFinished = true
+      action.setEffectiveTimeScale(speed)
+      action.reset()
+      action.time = trimIn
+      action.play()
+      trimActionRef.current = action
+    },
+    seekClip: (clipName: string, timeSec: number) => {
+      const action = actions[clipName]
+      if (!action) return
+      action.paused = true
+      action.time = timeSec
+      action.play()
+      action.paused = true
+      trimActionRef.current = action
+    },
+    pauseClip: () => {
+      if (trimActionRef.current) {
+        trimActionRef.current.paused = true
+      }
+    },
+    stopClip: () => {
+      if (trimActionRef.current) {
+        trimActionRef.current.stop()
+        trimActionRef.current = null
+      }
+    },
+    getClipTime: () => {
+      return trimActionRef.current?.time ?? 0
+    },
+    /** Return map of clipName → duration */
+    getClipDurations: () => {
+      const map: Record<string, number> = {}
+      animations.forEach((clip) => {
+        map[clip.name] = clip.duration
+      })
+      return map
     },
   }))
 
@@ -753,6 +871,14 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
         // Check if animation has finished (with small threshold for precision)
         if (time >= duration - 0.01) {
           playNextInSequence()
+        }
+      }
+
+      // Enforce trimOut for section/item trim playback
+      if (trimActionRef.current && !trimActionRef.current.paused) {
+        if (trimActionRef.current.time >= trimOutRef.current - 0.02) {
+          trimActionRef.current.paused = true
+          trimActionRef.current.time = trimOutRef.current
         }
       }
     }
@@ -1050,6 +1176,8 @@ interface Viewer3DProps {
   onNodeNamesChange: (names: string[], initialTransforms?: Record<string, NodeTransform>) => void
   /** โหนดที่เลือกจะแสดงสี ส่วนอื่นเทา (รองรับหลาย node) */
   highlightedNodeNames: string[]
+  /** Per-item highlight override from playback */
+  activeItemHighlight?: HighlightOverride | null
   // Note annotations
   notes: NoteAnnotation[]
   /** แสดง/ซ่อน Note Annotations บนวิว (หมุด + การ์ด) */
@@ -1381,6 +1509,7 @@ export default function Viewer3D({
   nodeTransforms,
   onNodeNamesChange,
   highlightedNodeNames,
+  activeItemHighlight,
   notes,
   showNoteAnnotations = true,
   isPlacingNote,
@@ -1509,6 +1638,7 @@ export default function Viewer3D({
               nodeTransforms={nodeTransforms}
               onNodeNamesChange={onNodeNamesChange}
               highlightedNodeNames={highlightedNodeNames}
+              activeItemHighlight={activeItemHighlight}
             />
           )}
           <CanvasInfoEmitter />

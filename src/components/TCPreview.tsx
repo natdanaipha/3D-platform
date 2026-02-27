@@ -123,7 +123,7 @@ export default function TCPreview({ sections, activeSectionId, onSectionClick }:
                       : 'text-neutral-700 hover:bg-white/50'
                   }`}
                 >
-                  {item.animationName ? (
+                  {(item.animations?.length ?? 0) > 0 || item.animationName ? (
                     <Play className={`h-3 w-3 shrink-0 ${isActive ? 'text-blue-600' : 'text-neutral-400'}`} />
                   ) : (
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-blue-500' : 'bg-neutral-400'}`} />

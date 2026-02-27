@@ -11,9 +11,10 @@ import {
   Trash2,
   Film,
 } from 'lucide-react'
-import { Button } from './ui/button'
-import type { Shot, TocSection, Sequence, ShotTransition, TransitionEasing } from '../types'
-import { getTotalDuration, getShotStartTime } from '../hooks/usePlaybackEngine'
+import { Button } from '../ui/button'
+import type { Shot, Sequence, ShotTransition, TransitionEasing } from './types'
+import type { TocSection } from '../../types'
+import { getTotalDuration, getShotStartTime } from './hooks/usePlaybackEngine'
 
 /* ─── Constants ─── */
 const PX_PER_SEC = 120 // pixels per second on the timeline
