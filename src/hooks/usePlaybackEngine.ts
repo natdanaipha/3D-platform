@@ -58,15 +58,97 @@ export function getShotStartTime(shots: Shot[], index: number): number {
 
 /* ─── Interpolation result ─── */
 
+/** State of currently playing animation item within a section */
+export interface ActiveAnimationState {
+  animationName: string
+  speed: number
+  /** Time offset within the animation (seconds) - accounts for trimIn */
+  timeOffset: number
+  /** Index of this animation item in the section's animationItems array */
+  itemIndex: number
+  /** Total items in the section */
+  totalItems: number
+}
+
 export interface InterpolatedState {
   cameraX: number
   cameraY: number
   cameraZ: number
   cameraFov: number
+  /** @deprecated Use activeAnimation for new animation item stack */
   animationName?: string
+  /** @deprecated Use activeAnimation for new animation item stack */
   animationSpeed: number
+  /** Active animation item state (for animation stack playback) */
+  activeAnimation?: ActiveAnimationState
   highlightNodes: string[]
   activeShotIndex: number
+}
+
+/** Calculate which animation item is active at a given local time within a section */
+export function getActiveAnimationItem(
+  section: TocSection,
+  localTimeInSection: number,
+): ActiveAnimationState | null {
+  const items = section.animationItems ?? []
+  if (items.length === 0) {
+    // Fallback to legacy single animation
+    if (section.animationName) {
+      return {
+        animationName: section.animationName,
+        speed: section.animationSpeed ?? 1,
+        timeOffset: localTimeInSection * (section.animationSpeed ?? 1),
+        itemIndex: 0,
+        totalItems: 1,
+      }
+    }
+    return null
+  }
+
+  let accTime = 0
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    // Effective duration of this item (trimmed and speed-adjusted)
+    const trimmedDuration = item.trimOut - item.trimIn
+    const effectiveDuration = trimmedDuration / item.speed
+
+    if (localTimeInSection < accTime + effectiveDuration) {
+      // This is the active item
+      const timeInItem = localTimeInSection - accTime
+      // Calculate the actual animation time (accounting for trim and speed)
+      const animationTime = item.trimIn + timeInItem * item.speed
+
+      return {
+        animationName: item.animationName,
+        speed: item.speed,
+        timeOffset: animationTime,
+        itemIndex: i,
+        totalItems: items.length,
+      }
+    }
+    accTime += effectiveDuration
+  }
+
+  // Past all items - return last item at its end
+  const lastItem = items[items.length - 1]
+  return {
+    animationName: lastItem.animationName,
+    speed: lastItem.speed,
+    timeOffset: lastItem.trimOut,
+    itemIndex: items.length - 1,
+    totalItems: items.length,
+  }
+}
+
+/** Calculate total duration of all animation items in a section (in playback time) */
+export function getSectionAnimationDuration(section: TocSection): number {
+  const items = section.animationItems ?? []
+  if (items.length === 0) return 0
+
+  return items.reduce((total, item) => {
+    const trimmedDuration = item.trimOut - item.trimIn
+    return total + trimmedDuration / item.speed
+  }, 0)
 }
 
 /** Build interpolated viewer state for a given time */
@@ -87,6 +169,13 @@ export function interpolateAtTime(
   const localT = getShotLocalT(shots, time)
   const trans = shot.transition
   const transDurationRatio = shot.duration > 0 ? trans.duration / shot.duration : 0
+
+  // Calculate local time within the shot for animation playback
+  const shotStartTime = getShotStartTime(shots, idx)
+  const localTimeInShot = time - shotStartTime
+
+  // Get active animation item state
+  const activeAnimation = getActiveAnimationItem(section, localTimeInShot) ?? undefined
 
   // Determine if we are inside the transition zone (beginning of this shot)
   const inTransition = localT < transDurationRatio && idx > 0 && trans.type !== 'cut'
@@ -114,8 +203,9 @@ export function interpolateAtTime(
         cameraY: prevCam.y + (curCam.y - prevCam.y) * t,
         cameraZ: prevCam.z + (curCam.z - prevCam.z) * t,
         cameraFov: prevCam.fov + (curCam.fov - prevCam.fov) * t,
-        animationName: section.animationName,
-        animationSpeed: section.animationSpeed ?? 1,
+        animationName: activeAnimation?.animationName ?? section.animationName,
+        animationSpeed: activeAnimation?.speed ?? section.animationSpeed ?? 1,
+        activeAnimation,
         highlightNodes: section.highlightNodes ?? [],
         activeShotIndex: idx,
       }
@@ -127,8 +217,9 @@ export function interpolateAtTime(
     cameraY: curCam.y,
     cameraZ: curCam.z,
     cameraFov: curCam.fov,
-    animationName: section.animationName,
-    animationSpeed: section.animationSpeed ?? 1,
+    animationName: activeAnimation?.animationName ?? section.animationName,
+    animationSpeed: activeAnimation?.speed ?? section.animationSpeed ?? 1,
+    activeAnimation,
     highlightNodes: section.highlightNodes ?? [],
     activeShotIndex: idx,
   }
