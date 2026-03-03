@@ -33,7 +33,7 @@ interface NoteMarker3DProps {
 }
 
 const DEFAULT_NOTE_COLOR = '#ef4444'
-const NOTE_FOCUS_COLOR = '#3b82f6' 
+const NOTE_FOCUS_COLOR = '#ffffff' 
 
 export default function NoteMarker3D({
   note,
@@ -189,13 +189,14 @@ export default function NoteMarker3D({
 
   const renderPinGeometry = () => {
     const baseR = isMoving ? 0.12 : 0.05
+    const triStarScale = 1.35
     switch (lineShape) {
       case 'square':
         return <boxGeometry args={[baseR * 2, baseR * 2, baseR * 0.4]} />
       case 'triangle':
-        return <coneGeometry args={[baseR, baseR * 2, 3]} />
+        return <coneGeometry args={[baseR * triStarScale, baseR * 2 * triStarScale, 3]} />
       case 'star':
-        return <cylinderGeometry args={[baseR * 1.2, baseR * 1.2, baseR * 0.8, 5]} />
+        return <cylinderGeometry args={[baseR * 1.2 * triStarScale, baseR * 1.2 * triStarScale, baseR * 1.4 * triStarScale, 5]} />
       default:
         return <sphereGeometry args={[baseR, 16, 16]} />
     }
@@ -204,8 +205,9 @@ export default function NoteMarker3D({
   /** สามเหลี่ยม (cone): ปลายอยู่ที่ +Y ใน local — เลื่อน mesh ลง -baseR ให้ปลายอยู่ที่ group origin (จุดปัก) */
   /** ดาว (cylinder): ฐานอยู่ที่ -height/2 — เลื่อน mesh ขึ้น +height/2 ให้ฐานอยู่ที่ group origin */
   const baseR = isMoving ? 0.12 : 0.05
-  const starHeight = baseR * 0.8
-  const triangleOffsetY = lineShape === 'triangle' ? -baseR : 0
+  const triStarScale = 2.2
+  const starHeight = baseR * 1.4 * triStarScale
+  const triangleOffsetY = lineShape === 'triangle' ? -baseR * triStarScale : 0
   const starOffsetY = lineShape === 'star' ? starHeight / 2 : 0
   const pinMeshOffsetY = useCustomMarker ? 0 : (triangleOffsetY + starOffsetY)
   const size = baseR * 2
