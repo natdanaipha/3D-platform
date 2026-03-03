@@ -1,14 +1,20 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { GripHorizontal, List, Play, X } from 'lucide-react'
+import { GripHorizontal, List, Play, Square, X } from 'lucide-react'
 import type { TocSection } from '../types'
 
 interface TCPreviewProps {
   sections: TocSection[]
   activeSectionId?: string | null
+  /** Section currently being played (animation stack) */
+  playingSectionId?: string | null
   onSectionClick?: (section: TocSection) => void
+  /** Trigger section animation playback */
+  onPlaySection?: (sectionId: string) => void
+  /** Stop section animation playback */
+  onStopSection?: () => void
 }
 
-export default function TCPreview({ sections, activeSectionId, onSectionClick }: TCPreviewProps) {
+export default function TCPreview({ sections, activeSectionId, playingSectionId, onSectionClick, onPlaySection, onStopSection }: TCPreviewProps) {
   const [isOpen, setIsOpen] = useState(true)
 
   const [position, setPosition] = useState({ x: window.innerWidth - 260 - 16, y: 16 })
@@ -113,23 +119,46 @@ export default function TCPreview({ sections, activeSectionId, onSectionClick }:
           <div className="max-h-[50vh] overflow-y-auto py-1.5">
             {sections.map((item) => {
               const isActive = activeSectionId === item.id
+              const isPlaying = playingSectionId === item.id
+              const hasAnimations = (item.animationItems ?? []).length > 0 || !!item.animationName
               return (
-                <button
-                  key={item.id}
-                  onClick={() => onSectionClick?.(item)}
-                  className={`w-full flex items-center gap-2 px-4 py-2 text-left text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'bg-blue-500/15 text-blue-700'
-                      : 'text-neutral-700 hover:bg-white/50'
-                  }`}
-                >
-                  {item.animationName ? (
-                    <Play className={`h-3 w-3 shrink-0 ${isActive ? 'text-blue-600' : 'text-neutral-400'}`} />
-                  ) : (
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-blue-500' : 'bg-neutral-400'}`} />
+                <div key={item.id} className="flex items-center">
+                  <button
+                    onClick={() => onSectionClick?.(item)}
+                    className={`flex-1 flex items-center gap-2 px-4 py-2 text-left text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-blue-500/15 text-blue-700'
+                        : 'text-neutral-700 hover:bg-white/50'
+                    }`}
+                  >
+                    {hasAnimations ? (
+                      <Play className={`h-3 w-3 shrink-0 ${isActive ? 'text-blue-600' : 'text-neutral-400'}`} />
+                    ) : (
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-blue-500' : 'bg-neutral-400'}`} />
+                    )}
+                    <span className="truncate">{item.title}</span>
+                  </button>
+                  {hasAnimations && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (isPlaying) {
+                          onStopSection?.()
+                        } else {
+                          onPlaySection?.(item.id)
+                        }
+                      }}
+                      className={`mr-2 p-1.5 rounded-md transition-colors ${
+                        isPlaying
+                          ? 'text-red-500 hover:bg-red-50'
+                          : 'text-neutral-400 hover:text-blue-600 hover:bg-blue-50'
+                      }`}
+                      title={isPlaying ? 'Stop' : 'Play Section'}
+                    >
+                      {isPlaying ? <Square className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                    </button>
                   )}
-                  <span className="truncate">{item.title}</span>
-                </button>
+                </div>
               )
             })}
           </div>

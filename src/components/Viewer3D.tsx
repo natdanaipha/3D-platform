@@ -23,6 +23,12 @@ interface ModelProps {
   animationMode: 'single' | 'sequence'
   animationSequence: string[]
   onAnimationNamesChange: (names: string[]) => void
+  /** Report animation durations: name → seconds */
+  onAnimationDurationsChange?: (durations: Record<string, number>) => void
+  /** Seek current animation to this time (seconds). Set null to stop seeking. */
+  animationSeekTime?: number | null
+  /** Called every frame with (animName, currentTime) */
+  onAnimationFrame?: (animName: string, time: number) => void
   // Skeletons controls
   skeletonNames: string[]
   selectedSkeleton: string
@@ -74,6 +80,9 @@ const Model = forwardRef<any, ModelProps>(({
   animationMode,
   animationSequence,
   onAnimationNamesChange,
+  onAnimationDurationsChange,
+  animationSeekTime,
+  onAnimationFrame,
   skeletonNames: _skeletonNames,
   selectedSkeleton,
   skeletonVisible,
@@ -595,6 +604,21 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
     onAnimationNamesChange(animationNames)
   }, [animationNames, onAnimationNamesChange])
 
+  // Notify parent of animation durations
+  useEffect(() => {
+    if (!onAnimationDurationsChange || animations.length === 0) return
+    const durations: Record<string, number> = {}
+    animations.forEach((clip) => { durations[clip.name] = clip.duration })
+    onAnimationDurationsChange(durations)
+  }, [animations, onAnimationDurationsChange])
+
+  // Store desired seek time in a ref – the actual seeking is done inside useFrame
+  // so it is synchronous with mixer.update() and avoids timing conflicts.
+  const pendingSeekRef = useRef<number | null>(null)
+  useEffect(() => {
+    pendingSeekRef.current = animationSeekTime ?? null
+  }, [animationSeekTime])
+
   // Function to play next animation in sequence
   const playNextInSequence = () => {
     if (animationMode !== 'sequence' || animationSequence.length === 0) return
@@ -720,8 +744,17 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
         currentActionRef.current = action
         action.setLoop(animationLoop ? THREE.LoopRepeat : THREE.LoopOnce, animationLoop ? Infinity : 0)
         action.setEffectiveTimeScale(animationSpeed)
-        if (animationEnabled) {
-          action.play()
+        // Always activate the action so seeking/preview works
+        action.play()
+        if (!animationEnabled) {
+          // Keep action active but paused for trim preview seeking
+          action.paused = true
+        }
+        // Apply pending seek time (e.g. trimIn for section playback)
+        if (pendingSeekRef.current != null) {
+          action.time = pendingSeekRef.current
+          pendingSeekRef.current = null
+          mixer?.update(0)
         }
       } else {
         currentActionRef.current = null
@@ -741,7 +774,28 @@ gl_FragColor.rgb = mix(gl_FragColor.rgb, _darkGray, 0.72);
   // Update animation mixer each frame and check for sequence completion
   useFrame((_state, delta) => {
     if (mixer) {
+      // Apply pending seek synchronously BEFORE mixer.update so that
+      // both the seek and the mixer processing happen in the same frame.
+      const seekTime = pendingSeekRef.current
+      if (seekTime != null && currentActionRef.current) {
+        const action = currentActionRef.current
+        // Ensure the action is active in the mixer (stopped actions ignore time changes)
+        if (!action.isRunning() && !action.paused) {
+          action.play()
+          action.paused = true
+        }
+        action.time = seekTime
+        pendingSeekRef.current = null
+      }
+
       mixer.update(delta)
+
+      // Report current animation time to parent
+      if (onAnimationFrame && currentActionRef.current) {
+        const action = currentActionRef.current
+        const clip = action.getClip()
+        onAnimationFrame(clip.name, action.time)
+      }
       
       // Check if current animation in sequence has finished
       if (animationMode === 'sequence' && isPlayingSequenceRef.current && currentActionRef.current && animationSequence.length > 0) {
@@ -981,6 +1035,12 @@ interface Viewer3DProps {
   animationMode: 'single' | 'sequence'
   animationSequence: string[]
   onAnimationNamesChange: (names: string[]) => void
+  /** Report animation durations: name → seconds */
+  onAnimationDurationsChange?: (durations: Record<string, number>) => void
+  /** Seek current animation to this time (seconds). Set null to stop seeking. */
+  animationSeekTime?: number | null
+  /** Called every frame with (animName, currentTime) */
+  onAnimationFrame?: (animName: string, time: number) => void
   // Lighting controls
   ambientIntensity: number
   directionalIntensity: number
@@ -1323,6 +1383,9 @@ export default function Viewer3D({
   animationMode,
   animationSequence,
   onAnimationNamesChange,
+  onAnimationDurationsChange,
+  animationSeekTime,
+  onAnimationFrame,
   ambientIntensity,
   directionalIntensity,
   directionalX,
@@ -1482,6 +1545,9 @@ export default function Viewer3D({
               animationMode={animationMode}
               animationSequence={animationSequence}
               onAnimationNamesChange={onAnimationNamesChange}
+              onAnimationDurationsChange={onAnimationDurationsChange}
+              animationSeekTime={animationSeekTime}
+              onAnimationFrame={onAnimationFrame}
               skeletonNames={skeletonNames}
               selectedSkeleton={selectedSkeleton}
               skeletonVisible={skeletonVisible}
