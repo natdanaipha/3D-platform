@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { X } from 'lucide-react'
 import { Button } from './button'
@@ -18,7 +19,7 @@ export function Dialog({
   closeOnOverlayClick = true,
 }: DialogProps) {
   if (!open) return null
-  return (
+  const content = (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
@@ -30,6 +31,7 @@ export function Dialog({
       </div>
     </div>
   )
+  return createPortal(content, document.body)
 }
 
 interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement> {

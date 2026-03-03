@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { Editor } from '@tinymce/tinymce-react'
 import { Button } from '../ui/button'
 import { Plus, Trash2, FileText } from 'lucide-react'
@@ -15,6 +15,8 @@ interface NoteRichEditorProps {
   onChange: (pages: NotePage[]) => void
   height?: number
   placeholder?: string
+  /** true = โหมด Annotation Tool: ไม่แสดงปุ่มเพิ่มหน้า และเอา link รูป วิดีโอ ออกจาก toolbar */
+  annotationToolMode?: boolean
 }
 
 const defaultInit: Record<string, unknown> = {
@@ -35,6 +37,15 @@ const defaultInit: Record<string, unknown> = {
   convert_urls: false,
 }
 
+const annotationToolInit: Record<string, unknown> = {
+  ...defaultInit,
+  plugins: 'lists code table',
+  toolbar:
+    'undo redo | blocks | bold italic underline strikethrough | ' +
+    'forecolor backcolor | alignleft aligncenter alignright alignjustify | ' +
+    'bullist numlist outdent indent | removeformat',
+}
+
 function getDefaultPage(): NotePage {
   return { content: '' }
 }
@@ -44,12 +55,20 @@ export default function NoteRichEditor({
   onChange,
   height = 280,
   placeholder = 'พิมพ์ข้อความ ใส่รูป ลิงก์ หรือวิดีโอ...',
+  annotationToolMode = false,
 }: NoteRichEditorProps) {
   const [pages, setPages] = useState<NotePage[]>(
     initialPages.length > 0 ? initialPages : [getDefaultPage()]
   )
   const [activeIndex, setActiveIndex] = useState(0)
   const editorRef = useRef<any>(null)
+
+  // ซิงก์ state ภายในกับ props เมื่อมีการอัปเดตจากภายนอก
+  useEffect(() => {
+    const nextPages = initialPages.length > 0 ? initialPages : [getDefaultPage()]
+    setPages(nextPages)
+    setActiveIndex((prev) => Math.min(prev, nextPages.length - 1))
+  }, [initialPages])
 
   const syncPageContent = (index: number, content: string) => {
     const next = [...pages]
@@ -78,7 +97,8 @@ export default function NoteRichEditor({
 
   return (
     <div className="space-y-2 border rounded-md overflow-hidden bg-background">
-      {/* แท็บหลายหน้า: หน้า 1, 2, 3 ... */}
+      {/* แท็บหลายหน้า: หน้า 1, 2, 3 ... (ไม่แสดงใน annotationToolMode) */}
+      {!annotationToolMode && (
       <div className="flex flex-wrap items-center gap-1 p-2 border-b bg-muted/30">
         {pages.map((_, i) => (
           <button
@@ -106,6 +126,7 @@ export default function NoteRichEditor({
           เพิ่มหน้า
         </Button>
       </div>
+      )}
 
       {/* TinyMCE สำหรับหน้าปัจจุบัน */}
       <div className="p-2">
@@ -129,16 +150,18 @@ export default function NoteRichEditor({
           value={safeContent}
           onEditorChange={(content) => syncPageContent(activeIndex, content)}
           init={{
-            ...defaultInit,
+            ...(annotationToolMode ? annotationToolInit : defaultInit),
             height,
             placeholder,
-            // ใส่รูป: embed as base64
-            images_upload_handler: (blobInfo: { blob: () => Blob }) =>
+            // ใส่รูป: embed as base64 (ไม่ใช้ใน annotationToolMode)
+            ...(annotationToolMode ? {} : {
+              images_upload_handler: (blobInfo: { blob: () => Blob }) =>
               new Promise<string>((resolve) => {
                 const reader = new FileReader()
                 reader.onload = () => resolve((reader.result as string) || '')
                 reader.readAsDataURL(blobInfo.blob())
               }),
+            }),
           }}
         />
       </div>
