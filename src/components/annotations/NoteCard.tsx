@@ -13,6 +13,19 @@ const MAX_HEIGHT = 480
 
 const DEFAULT_NOTE_COLOR = '#ef4444'
 
+/** แปลง YouTube/Vimeo watch URL เป็น embed URL สำหรับ iframe */
+function getEmbedVideoUrl(url: string): string | null {
+  if (!url || typeof url !== 'string') return null
+  const u = url.trim()
+  // YouTube: watch?v=ID, youtu.be/ID, embed/ID
+  const ytMatch = u.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/)
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`
+  // Vimeo: vimeo.com/ID
+  const vimeoMatch = u.match(/vimeo\.com\/(?:video\/)?(\d+)/)
+  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`
+  return null
+}
+
 interface NoteCardProps {
   id: string
   /** หัวข้อการ์ด (ภาษาไทย) */
@@ -40,10 +53,49 @@ interface NoteCardProps {
   showEditButton?: boolean
   /** 'bubble' = หน้าตาแบบฟอง (Annotation Tool), 'default' = การ์ดหัวแดง */
   variant?: 'default' | 'bubble'
+  /** ข้อมูลสื่อจาก Annotation Tool สำหรับแสดงต่อท้ายหน้า 1 */
+  mediaUpload?: boolean
+  mediaType?: 'image' | 'video' | 'audio'
+  mediaSource?: 'url' | 'upload'
+  mediaUrl?: string
+  mediaFileName?: string
+  mediaFileData?: string
+  mediaAutoPlay?: boolean
+  mediaLoop?: boolean
+  mediaCoverEnabled?: boolean
+  mediaCoverFileData?: string
+  mediaActive?: boolean
 }
 
 export default function NoteCard(props: NoteCardProps) {
-  const { id, title, titleEn, content = '', pages: propPages, thaiPageCount: propThaiPageCount, color = DEFAULT_NOTE_COLOR, position2D, width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT, onPositionChange, onSizeChange, onDelete, onEdit, showEditButton = true, variant = 'default' } = props
+  const {
+    id,
+    title,
+    titleEn,
+    content = '',
+    pages: propPages,
+    thaiPageCount: propThaiPageCount,
+    color = DEFAULT_NOTE_COLOR,
+    position2D,
+    width = DEFAULT_WIDTH,
+    height = DEFAULT_HEIGHT,
+    onPositionChange,
+    onSizeChange,
+    onDelete,
+    onEdit,
+    showEditButton = true,
+    variant = 'default',
+    mediaType,
+    mediaSource,
+    mediaUrl,
+    mediaFileName,
+    mediaFileData,
+    mediaAutoPlay,
+    mediaLoop,
+    mediaCoverEnabled,
+    mediaCoverFileData,
+    mediaActive,
+  } = props
   const pages: NotePage[] = propPages?.length ? propPages : [{ content: content || '' }]
   const hasLangSplit = propThaiPageCount != null && propThaiPageCount >= 1
   const thaiPages = hasLangSplit ? pages.slice(0, propThaiPageCount) : []
@@ -71,7 +123,64 @@ export default function NoteCard(props: NoteCardProps) {
     ? (viewLang === 'th' ? displayPagesTh : displayPagesEn)
     : displayPages
   const currentPage = activeDisplayPages[currentPageIndex]
-  const html = currentPage?.content ?? ''
+  const baseHtml = currentPage?.content ?? ''
+
+  // HTML ของสื่อ (รูป / วิดีโอ / เสียง) ต่อท้ายหน้า 1
+  // วิดีโอ: แสดงเมื่อมี mediaUrl (ลิงก์) หรือ mediaFileData (อัปโหลด) — ถ้าไม่ระบุ mediaSource ถือว่าเป็น url
+  const hasVideoSrc =
+    mediaType === 'video' &&
+    (mediaSource === 'upload' ? !!mediaFileData : !!(mediaUrl || mediaFileData))
+  const shouldShowMedia =
+    mediaActive !== false &&
+    !!mediaType &&
+    (mediaType === 'image'
+      ? !!mediaFileData
+      : mediaType === 'video'
+        ? hasVideoSrc
+        : mediaType === 'audio'
+          ? !!mediaFileData
+          : false)
+
+  let mediaHtml = ''
+  let showCoverAboveMedia = false // ใช้ภาพหน้าปกแสดงด้านบน (YouTube/เสียง; วิดีโออัปโหลดใช้ poster ใน <video>)
+  if (shouldShowMedia) {
+    if (mediaType === 'image' && mediaFileData) {
+      mediaHtml = `<div class="mt-3"><img src="${mediaFileData}" alt="${mediaFileName ?? ''}" style="max-width:100%;height:auto;border-radius:0.5rem;"/></div>`
+    } else if (mediaType === 'video') {
+      const src = (mediaSource === 'upload' ? mediaFileData : mediaUrl || mediaFileData) ?? ''
+      if (src) {
+        const embedUrl = mediaSource !== 'upload' ? getEmbedVideoUrl(src) : null
+        const coverPoster = mediaCoverEnabled && mediaCoverFileData ? ` poster="${String(mediaCoverFileData).replace(/"/g, '&quot;')}"` : ''
+        if (embedUrl) {
+          showCoverAboveMedia = true
+          const params = new URLSearchParams()
+          if (mediaAutoPlay) params.set('autoplay', '1')
+          if (mediaLoop) {
+            params.set('loop', '1')
+            const ytId = embedUrl.match(/embed\/([a-zA-Z0-9_-]+)/)?.[1]
+            if (ytId) params.set('playlist', ytId)
+          }
+          const iframeSrc = params.toString() ? `${embedUrl}?${params.toString()}` : embedUrl
+          mediaHtml = `<div class="mt-3 rounded-lg overflow-hidden" style="aspect-ratio:16/9;"><iframe src="${iframeSrc}" style="width:100%;height:100%;border:0;border-radius:0.5rem;" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen></iframe></div>`
+        } else {
+          const safeSrc = src.replace(/"/g, '&quot;')
+          mediaHtml = `<div class="mt-3"><video src="${safeSrc}" controls style="max-width:100%;height:auto;border-radius:0.5rem;"${coverPoster}${mediaAutoPlay ? ' autoplay muted' : ''}${mediaLoop ? ' loop' : ''}></video></div>`
+        }
+      }
+    } else if (mediaType === 'audio' && mediaFileData) {
+      showCoverAboveMedia = true
+      mediaHtml = `<div class="mt-3"><audio src="${mediaFileData}" controls${mediaAutoPlay ? ' autoplay' : ''}${mediaLoop ? ' loop' : ''}></audio></div>`
+    }
+
+    // ภาพหน้าปก: วิดีโอ YouTube/Vimeo แสดงด้านบน iframe, วิดีโออัปโหลดใช้ poster ใน <video>, เสียงแสดงด้านบน
+    if (showCoverAboveMedia && mediaCoverEnabled && mediaCoverFileData) {
+      const safeCover = String(mediaCoverFileData).replace(/"/g, '&quot;')
+      const coverHtml = `<div class="mt-3"><img src="${safeCover}" alt="ภาพหน้าปก" style="max-width:100%;height:auto;border-radius:0.5rem;display:block;"/></div>`
+      mediaHtml = coverHtml + mediaHtml
+    }
+  }
+
+  const html = currentPageIndex === 0 ? `${baseHtml}${mediaHtml}` : baseHtml
   const hasMultiplePages = activeDisplayPages.length > 1
   /** หัวข้อที่แสดงตามภาษาที่เลือก (ไทย = title, อังกฤษ = titleEn) */
   const displayTitle = hasLangSplit && viewLang === 'en' ? (titleEn ?? title ?? '') : (title ?? '')
@@ -368,9 +477,13 @@ export default function NoteCard(props: NoteCardProps) {
                     <div
                       className="note-detail-modal-prose text-gray-800 text-sm leading-relaxed prose prose-sm max-w-none prose-img:max-w-full prose-img:w-full prose-video:max-w-full [&:has(iframe)_iframe]:bg-transparent"
                       dangerouslySetInnerHTML={{
-                        __html: activeDisplayPages[viewPageIndex]?.content?.trim()
-                          ? activeDisplayPages[viewPageIndex].content
-                          : '<span class="text-gray-400">(ไม่มีข้อความ)</span>',
+                        __html: (() => {
+                          const page = activeDisplayPages[viewPageIndex]
+                          const base = page?.content?.trim()
+                            ? page.content
+                            : '<span class="text-gray-400">(ไม่มีข้อความ)</span>'
+                          return viewPageIndex === 0 ? `${base}${mediaHtml}` : base
+                        })(),
                       }}
                     />
                   </div>

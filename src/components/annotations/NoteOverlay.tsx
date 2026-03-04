@@ -114,6 +114,17 @@ export default function NoteOverlay({
             onEdit={() => onNoteEdit?.(note.id)}
             showEditButton={showEditButtonOnNoteCards}
             variant={showEditButtonOnNoteCards ? 'default' : 'bubble'}
+            mediaUpload={note.mediaUpload}
+            mediaType={note.mediaType}
+            mediaSource={note.mediaSource}
+            mediaUrl={note.mediaUrl}
+            mediaFileName={note.mediaFileName}
+            mediaFileData={note.mediaFileData}
+            mediaAutoPlay={note.mediaAutoPlay}
+            mediaLoop={note.mediaLoop}
+            mediaCoverEnabled={note.mediaCoverEnabled}
+            mediaCoverFileData={note.mediaCoverFileData}
+            mediaActive={note.mediaActive}
           />
         )
       })}
@@ -184,7 +195,7 @@ export default function NoteOverlay({
                 )
               }
               if (lineShape === 'triangle') {
-                const r = dotSize
+                const r = dotSize * 1.35
                 const points = [
                   [0, -r].join(','),
                   [r, r * 0.6].join(','),
@@ -199,7 +210,7 @@ export default function NoteOverlay({
                 )
               }
               if (lineShape === 'star') {
-                const r = dotSize
+                const r = dotSize * 1.35
                 const points: [number, number][] = []
                 for (let i = 0; i < 5; i++) {
                   const a = (i * 4 * Math.PI) / 5 - Math.PI / 2

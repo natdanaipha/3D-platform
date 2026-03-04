@@ -5,9 +5,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { Button } from '../ui/button'
 import { Card } from '../ui/card'
-import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Trash2, Type, Pin, Info, Minus, Upload, X, Circle, Square, Triangle, Star, HelpCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Plus, Trash2, Type, Pin, Info, Minus, Upload, X, Circle, Square, Triangle, Star, HelpCircle, GripVertical, Maximize2, Copy } from 'lucide-react'
 import type { NoteAnnotation, NotePage, TextAnnotation, PartListItem } from './types'
 import NoteRichEditor from '../annotations/NoteRichEditor'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '../ui/dialog'
 
 type AnnotationTab = 'data' | 'media' | 'line'
 
@@ -23,6 +24,8 @@ export interface AnnotationToolDrawerProps {
   onStartMoveNote?: (noteId: string) => void
   onNoteUpdate?: (id: string, updates: Partial<NoteAnnotation>) => void
   onNoteDelete?: (id: string) => void
+  /** ลำดับรายการ Annotation เปลี่ยนแล้ว (ลากจัดลำดับ) */
+  onNotesReorder?: (notes: NoteAnnotation[]) => void
   textAnnotations?: TextAnnotation[]
   isPlacingText?: boolean
   onTogglePlaceText?: () => void
@@ -52,6 +55,10 @@ function AnnotationBlock({
   onDelete,
   movingNoteId,
   onStartMoveNote,
+  onDragStart,
+  onDragEnd,
+  onDropAt,
+  isDragging,
 }: {
   note: NoteAnnotation
   index: number
@@ -63,6 +70,10 @@ function AnnotationBlock({
   onDelete: () => void
   movingNoteId: string | null
   onStartMoveNote: (noteId: string) => void
+  onDragStart?: () => void
+  onDragEnd?: () => void
+  onDropAt?: (index: number) => void
+  isDragging?: boolean
 }) {
   const pages = note.pages?.length ? note.pages : [{ content: note.text ?? '' }, { content: '' }]
   const thaiPageCount = note.thaiPageCount ?? 1
@@ -87,6 +98,17 @@ function AnnotationBlock({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const coverInputRef = useRef<HTMLInputElement>(null)
   const lineMarkerInputRef = useRef<HTMLInputElement>(null)
+  const [openDescriptionModal, setOpenDescriptionModal] = useState(false)
+  const [copiedDescription, setCopiedDescription] = useState<'th' | 'en' | null>(null)
+
+  useEffect(() => {
+    if (copiedDescription == null) return
+    const t = setTimeout(() => setCopiedDescription(null), 2000)
+    return () => clearTimeout(t)
+  }, [copiedDescription])
+  useEffect(() => {
+    if (!openDescriptionModal) setCopiedDescription(null)
+  }, [openDescriptionModal])
 
   const lineUseDefault = note.lineUseDefault ?? true
   const lineShape = note.lineShape ?? 'circle'
@@ -129,10 +151,16 @@ function AnnotationBlock({
     const reader = new FileReader()
     reader.onload = () => {
       const data = reader.result as string
-      onUpdate({
+      const updates: Partial<NoteAnnotation> = {
+        mediaUpload: true,
+        mediaType: mediaType === 'video' ? 'video' : mediaType === 'audio' ? 'audio' : 'image',
         mediaFileName: file.name,
         mediaFileData: data,
-      })
+      }
+      if (mediaType === 'video') {
+        updates.mediaSource = 'upload'
+      }
+      onUpdate(updates)
     }
     reader.readAsDataURL(file)
     e.target.value = ''
@@ -176,8 +204,35 @@ function AnnotationBlock({
   }
 
   return (
-    <Card className="overflow-hidden border border-border bg-card">
+    <Card
+      className={`overflow-hidden border border-border bg-card ${isDragging ? 'opacity-60' : ''}`}
+      onDragOver={(e) => {
+        if (!onDropAt) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+      }}
+      onDrop={(e) => {
+        e.preventDefault()
+        onDropAt?.(index)
+      }}
+    >
       <div className="flex items-center justify-between gap-2 p-3 bg-muted/40 border-b border-border">
+        <span
+          role="button"
+          tabIndex={0}
+          draggable={!!onDragStart}
+          onDragStart={(e) => {
+            if (!onDragStart) return
+            e.dataTransfer.setData('text/plain', note.id)
+            e.dataTransfer.effectAllowed = 'move'
+            onDragStart()
+          }}
+          onDragEnd={() => onDragEnd?.()}
+          className="cursor-move touch-none"
+          title="ลากเพื่อจัดลำดับ"
+        >
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+        </span>
         <button
           type="button"
           onClick={onToggleExpand}
@@ -258,24 +313,152 @@ function AnnotationBlock({
                     className="w-full p-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                 </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">คำอธิบาย (ภาษาไทย)</label>
-                  <NoteRichEditor
-                    pages={thaiPages.length ? thaiPages : [{ content: '' }]}
-                    onChange={handlePagesTh}
-                    height={140}
-                    placeholder="เป็นส่วนหนึ่งของระบบไหลเวียนโลหิต..."
-                  />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-muted-foreground">คำอธิบาย (ภาษาไทย) และ (ภาษาอังกฤษ)</span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5 shrink-0"
+                      onClick={() => setOpenDescriptionModal(true)}
+                      title="เปิดโมเดลแก้ไขคำอธิบาย"
+                    >
+                      <Maximize2 className="h-4 w-4" />
+                      แก้ในโมเดล
+                    </Button>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <label className="text-xs font-medium text-muted-foreground">คำอธิบาย (ภาษาไทย)</label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 text-xs"
+                        onClick={() => {
+                          const html = (thaiPages.length ? thaiPages : [{ content: '' }]).map((p) => p.content || '').join('\n')
+                          const div = document.createElement('div')
+                          div.innerHTML = html
+                          const text = div.textContent || div.innerText || ''
+                          navigator.clipboard.writeText(text).then(() => setCopiedDescription('th'))
+                        }}
+                      >
+                        <Copy className="h-3 w-3" />
+                        {copiedDescription === 'th' ? 'คัดลอกแล้ว' : 'คัดลอก'}
+                      </Button>
+                    </div>
+                    <NoteRichEditor
+                      pages={thaiPages.length ? thaiPages : [{ content: '' }]}
+                      onChange={handlePagesTh}
+                      height={140}
+                      placeholder="เป็นส่วนหนึ่งของระบบไหลเวียนโลหิต..."
+                      annotationToolMode
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <label className="text-xs font-medium text-muted-foreground">คำอธิบาย (ภาษาอังกฤษ)</label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 gap-1 text-xs"
+                        onClick={() => {
+                          const html = (englishPages.length ? englishPages : [{ content: '' }]).map((p) => p.content || '').join('\n')
+                          const div = document.createElement('div')
+                          div.innerHTML = html
+                          const text = div.textContent || div.innerText || ''
+                          navigator.clipboard.writeText(text).then(() => setCopiedDescription('en'))
+                        }}
+                      >
+                        <Copy className="h-3 w-3" />
+                        {copiedDescription === 'en' ? 'คัดลอกแล้ว' : 'คัดลอก'}
+                      </Button>
+                    </div>
+                    <NoteRichEditor
+                      pages={englishPages.length ? englishPages : [{ content: '' }]}
+                      onChange={handlePagesEn}
+                      height={140}
+                      placeholder="Description (English)..."
+                      annotationToolMode
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">คำอธิบาย (ภาษาอังกฤษ)</label>
-                  <NoteRichEditor
-                    pages={englishPages.length ? englishPages : [{ content: '' }]}
-                    onChange={handlePagesEn}
-                    height={140}
-                    placeholder="Description (English)..."
-                  />
-                </div>
+
+                <Dialog open={openDescriptionModal} onOpenChange={setOpenDescriptionModal}>
+                  <DialogContent
+                    className="w-full max-w-2xl max-h-[90vh] flex flex-col"
+                    onClose={() => setOpenDescriptionModal(false)}
+                  >
+                    <DialogHeader>
+                      <DialogTitle>แก้ไขคำอธิบาย (ภาษาไทย / ภาษาอังกฤษ)</DialogTitle>
+                    </DialogHeader>
+                    <DialogBody className="space-y-6">
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <label className="text-sm font-medium text-muted-foreground">คำอธิบาย (ภาษาไทย)</label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 gap-1.5"
+                            onClick={() => {
+                              const html = (thaiPages.length ? thaiPages : [{ content: '' }]).map((p) => p.content || '').join('\n')
+                              const div = document.createElement('div')
+                              div.innerHTML = html
+                              const text = div.textContent || div.innerText || ''
+                              navigator.clipboard.writeText(text).then(() => setCopiedDescription('th'))
+                            }}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            {copiedDescription === 'th' ? 'คัดลอกแล้ว' : 'คัดลอก'}
+                          </Button>
+                        </div>
+                        <NoteRichEditor
+                          pages={thaiPages.length ? thaiPages : [{ content: '' }]}
+                          onChange={handlePagesTh}
+                          height={220}
+                          placeholder="เป็นส่วนหนึ่งของระบบไหลเวียนโลหิต..."
+                          annotationToolMode
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <label className="text-sm font-medium text-muted-foreground">คำอธิบาย (ภาษาอังกฤษ)</label>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 gap-1.5"
+                            onClick={() => {
+                              const html = (englishPages.length ? englishPages : [{ content: '' }]).map((p) => p.content || '').join('\n')
+                              const div = document.createElement('div')
+                              div.innerHTML = html
+                              const text = div.textContent || div.innerText || ''
+                              navigator.clipboard.writeText(text).then(() => setCopiedDescription('en'))
+                            }}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                            {copiedDescription === 'en' ? 'คัดลอกแล้ว' : 'คัดลอก'}
+                          </Button>
+                        </div>
+                        <NoteRichEditor
+                          pages={englishPages.length ? englishPages : [{ content: '' }]}
+                          onChange={handlePagesEn}
+                          height={220}
+                          placeholder="Description (English)..."
+                          annotationToolMode
+                        />
+                      </div>
+                    </DialogBody>
+                    <DialogFooter>
+                      <Button type="button" variant="secondary" onClick={() => setOpenDescriptionModal(false)}>
+                        ปิด
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
 
                 <div className="p-3 rounded-lg bg-muted/50 border border-border space-y-3">
                   <div className="flex items-center gap-1.5">
@@ -349,7 +532,7 @@ function AnnotationBlock({
                   <Button
                     type="button"
                     variant="destructive"
-                    className="w-full gap-2 mt-2"
+                    className="w-full gap-2 mt-2 focus-visible:outline-none focus-visible:ring-0 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.7)] active:shadow-[0_0_0_3px_rgba(255,255,255,0.8),0_0_16px_6px_rgba(255,255,255,0.35)]"
                     onClick={handleUpdatePosition}
                   >
                     <Pin className="h-4 w-4" />
@@ -472,7 +655,7 @@ function AnnotationBlock({
                           <p className="text-xs font-medium text-muted-foreground mb-1">ประเภทไฟล์ :</p>
                           <select
                             value={mediaSource}
-                            onChange={(e) => onUpdate({ mediaSource: e.target.value as 'url' | 'upload' })}
+                            onChange={(e) => onUpdate({ mediaType: 'video', mediaSource: e.target.value as 'url' | 'upload' })}
                             className="w-full p-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                           >
                             <option value="url">URL</option>
@@ -485,7 +668,7 @@ function AnnotationBlock({
                             <input
                               type="url"
                               value={mediaUrl}
-                              onChange={(e) => onUpdate({ mediaUrl: e.target.value })}
+                              onChange={(e) => onUpdate({ mediaType: 'video', mediaSource: 'url', mediaUrl: e.target.value })}
                               placeholder="https://www.youtube.com/watch?v=..."
                               className="w-full p-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-primary"
                             />
@@ -540,6 +723,9 @@ function AnnotationBlock({
                         </div>
                         <div className="border rounded-lg p-3 bg-muted/30">
                           <h4 className="text-sm font-medium mb-2">อัปโหลดไฟล์ภาพหน้าปก</h4>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            ใช้ได้ทั้งวิดีโอจาก URL (YouTube/Vimeo) และวิดีโออัปโหลด — เลือกภาพแล้วจะแสดงหน้าปกวิดีโอบนการ์ด
+                          </p>
                           <label className="flex items-start gap-2 cursor-pointer">
                             <input
                               type="checkbox"
@@ -548,7 +734,7 @@ function AnnotationBlock({
                               className="rounded border-gray-300 text-primary focus:ring-primary mt-0.5"
                             />
                             <span className="text-xs text-muted-foreground">
-                              อัปโหลดภาพปกวิดีโอ (หากไม่ได้อัปโหลดภาพ ระบบจะตั้งภาพวิดีโอเฟรมแรกเป็นภาพหน้าปก)
+                              อัปโหลดภาพปกวิดีโอ (วิดีโอจาก URL ไม่มีเฟรมแรก ควรใส่ภาพปก; วิดีโออัปโหลดถ้าไม่ใส่จะใช้เฟรมแรก)
                             </span>
                           </label>
                           {mediaCoverEnabled && (
@@ -583,27 +769,30 @@ function AnnotationBlock({
                       <div className="space-y-4">
                         <div>
                           <h4 className="text-sm font-medium mb-2">อัปโหลดไฟล์เสียง</h4>
-                          <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".mp3,.wav,.wma,audio/mp3,audio/wav,audio/x-ms-wma"
-                            className="hidden"
-                            onChange={handleMediaFileChange}
-                          />
-                          <div
-                            onClick={() => fileInputRef.current?.click()}
-                            className="border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:bg-muted/30 cursor-pointer transition-colors"
-                          >
-                            <Upload className="h-10 w-10 text-orange-500" />
-                            <span className="text-sm text-center">
-                              วางไฟล์ที่นี่ หรือ <span className="text-primary underline">เลือกไฟล์</span>
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            อัปโหลดไฟล์เสียง .mp3, .wav, .wma (ขนาดไม่เกิน 1 MB)
-                          </p>
-                          {mediaFileName && (
-                            <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                          {!(mediaFileName || mediaFileData) ? (
+                            <>
+                              <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept=".mp3,.wav,.wma,audio/mp3,audio/wav,audio/x-ms-wma"
+                                className="hidden"
+                                onChange={handleMediaFileChange}
+                              />
+                              <div
+                                onClick={() => fileInputRef.current?.click()}
+                                className="border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:bg-muted/30 cursor-pointer transition-colors"
+                              >
+                                <Upload className="h-10 w-10 text-orange-500" />
+                                <span className="text-sm text-center">
+                                  วางไฟล์ที่นี่ หรือ <span className="text-primary underline">เลือกไฟล์</span>
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                อัปโหลดไฟล์เสียง .mp3, .wav, .wma (ขนาดไม่เกิน 1 MB)
+                              </p>
+                            </>
+                          ) : (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
                               <Upload className="h-3 w-3" /> {mediaFileName}
                               <button type="button" onClick={removeMediaFile} className="text-destructive hover:underline ml-1">ลบ</button>
                             </p>
@@ -634,29 +823,30 @@ function AnnotationBlock({
                                 <span className="text-sm">กดเพื่อเล่น</span>
                               </label>
                             </div>
-                            <div className="flex gap-4">
-                              <span className="text-xs text-muted-foreground">วนซ้ำ (Loop) :</span>
-                              <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name={`audio-loop-${note.id}`}
-                                  checked={!mediaLoop}
-                                  onChange={() => onUpdate({ mediaLoop: false })}
-                                  className="rounded-full border-gray-300 text-primary focus:ring-primary"
-                                />
-                                <span className="text-sm">ครั้งเดียว</span>
-                              </label>
-                              <label className="flex items-center gap-2 cursor-pointer">
-                                <input
-                                  type="radio"
-                                  name={`audio-loop-${note.id}`}
-                                  checked={mediaLoop}
-                                  onChange={() => onUpdate({ mediaLoop: true })}
-                                  className="rounded-full border-gray-300 text-primary focus:ring-primary"
-                                />
-                                <span className="text-sm">วนซ้ำ</span>
-                              </label>
-                            </div>
+                          </div>
+                          <p className="text-xs font-medium text-muted-foreground mb-2 mt-4">การวนซ้ำ (Loop)</p>
+                          <p className="text-xs text-muted-foreground mb-2">เลือกว่าให้เสียงเล่นซ้ำหรือหยุดเมื่อจบหนึ่งรอบ</p>
+                          <div className="flex gap-4">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`audio-loop-${note.id}`}
+                                checked={!mediaLoop}
+                                onChange={() => onUpdate({ mediaLoop: false })}
+                                className="rounded-full border-gray-300 text-primary focus:ring-primary"
+                              />
+                              <span className="text-sm">เล่นครั้งเดียว</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`audio-loop-${note.id}`}
+                                checked={mediaLoop}
+                                onChange={() => onUpdate({ mediaLoop: true })}
+                                className="rounded-full border-gray-300 text-primary focus:ring-primary"
+                              />
+                              <span className="text-sm">วนซ้ำตลอด</span>
+                            </label>
                           </div>
                         </div>
                         <div className="border rounded-lg p-3 bg-muted/30">
@@ -772,26 +962,42 @@ function AnnotationBlock({
                       >
                         {shape === 'circle' && <Circle className="w-6 h-6" fill="currentColor" />}
                         {shape === 'square' && <Square className="w-6 h-6" fill="currentColor" />}
-                        {shape === 'triangle' && <Triangle className="w-6 h-6" fill="currentColor" />}
-                        {shape === 'star' && <Star className="w-6 h-6" fill="currentColor" />}
+                        {shape === 'triangle' && <Triangle className="w-7 h-7" fill="currentColor" />}
+                        {shape === 'star' && <Star className="w-7 h-7" fill="currentColor" />}
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
                     <div
-                      onClick={() => lineMarkerInputRef.current?.click()}
-                      className="border-2 border-dashed rounded-lg p-6 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:border-primary/50 hover:bg-muted/30 cursor-pointer text-center"
+                      onClick={() => !lineMarkerFileData && lineMarkerInputRef.current?.click()}
+                      className={`border-2 rounded-lg p-6 flex flex-col items-center justify-center gap-2 text-center min-h-[120px] ${
+                        lineMarkerFileData
+                          ? 'border-border bg-muted/20 cursor-default'
+                          : 'border-dashed border-border text-muted-foreground hover:border-primary/50 hover:bg-muted/30 cursor-pointer'
+                      }`}
                     >
-                      <Upload className="h-8 w-8" />
-                      <span className="text-xs">.jpg, .png, .svg</span>
-                      <span className="text-xs">100×100px, 1 MB</span>
-                    </div>
-                    <div className="border rounded-lg p-2 bg-muted/30 flex items-center justify-center min-h-[80px]">
                       {lineMarkerFileData ? (
-                        <img src={lineMarkerFileData} alt="Preview" className="max-w-full max-h-20 object-contain" />
+                        <>
+                          <div className="relative w-full flex items-center justify-center">
+                            <img src={lineMarkerFileData} alt="Preview" className="max-w-full max-h-20 object-contain" />
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); removeLineMarkerFile() }}
+                              className="absolute top-0 right-0 p-1 rounded-md bg-muted hover:bg-destructive hover:text-destructive-foreground"
+                              title="ลบรูป"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <span className="text-xs text-muted-foreground truncate max-w-full">{lineMarkerFileName || 'ไฟล์รูป'}</span>
+                        </>
                       ) : (
-                        <span className="text-xs text-muted-foreground">ตัวอย่าง</span>
+                        <>
+                          <Upload className="h-8 w-8" />
+                          <span className="text-xs">.jpg, .png, .svg</span>
+                          <span className="text-xs">100×100px, 1 MB</span>
+                        </>
                       )}
                     </div>
                     <input
@@ -801,15 +1007,6 @@ function AnnotationBlock({
                       className="hidden"
                       onChange={handleLineMarkerFileChange}
                     />
-                  </div>
-                )}
-
-                {!lineUseDefault && (lineMarkerFileName || lineMarkerFileData) && (
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-muted-foreground truncate">{lineMarkerFileName}</span>
-                    <button type="button" onClick={removeLineMarkerFile} className="p-1 rounded hover:bg-muted shrink-0">
-                      <X className="h-4 w-4" />
-                    </button>
                   </div>
                 )}
 
@@ -964,6 +1161,7 @@ export default function AnnotationToolDrawer({
   onStartMoveNote = () => {},
   onNoteUpdate = () => {},
   onNoteDelete = () => {},
+  onNotesReorder,
   textAnnotations: _textAnnotations = [],
   isPlacingText = false,
   onTogglePlaceText = () => {},
@@ -982,8 +1180,23 @@ export default function AnnotationToolDrawer({
   const [internalIsOpen, setInternalIsOpen] = useState(false)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [activeTabs, setActiveTabs] = useState<Record<string, AnnotationTab>>({})
+  const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null)
   const isOpen = externalIsOpen !== undefined ? externalIsOpen : internalIsOpen
   const setIsOpen = externalSetIsOpen || setInternalIsOpen
+
+  const handleDropAt = (dropIndex: number) => {
+    if (draggedNoteId == null || !onNotesReorder) return
+    const fromIndex = notes.findIndex((n) => n.id === draggedNoteId)
+    if (fromIndex === -1 || fromIndex === dropIndex) {
+      setDraggedNoteId(null)
+      return
+    }
+    const newNotes = [...notes]
+    const [removed] = newNotes.splice(fromIndex, 1)
+    newNotes.splice(dropIndex, 0, removed)
+    onNotesReorder(newNotes)
+    setDraggedNoteId(null)
+  }
 
   useEffect(() => {
     if (notes.length > 0) setExpandedIds((prev) => new Set([...prev, ...notes.map((n) => n.id)]))
@@ -1063,6 +1276,10 @@ export default function AnnotationToolDrawer({
                   onDelete={() => onNoteDelete(note.id)}
                   movingNoteId={movingNoteId ?? null}
                   onStartMoveNote={(id) => onStartMoveNote(id)}
+                  onDragStart={onNotesReorder ? () => setDraggedNoteId(note.id) : undefined}
+                  onDragEnd={() => setDraggedNoteId(null)}
+                  onDropAt={onNotesReorder ? handleDropAt : undefined}
+                  isDragging={draggedNoteId === note.id}
                 />
               ))}
             </div>

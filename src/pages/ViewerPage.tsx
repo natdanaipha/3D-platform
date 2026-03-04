@@ -456,6 +456,10 @@ export default function ViewerPage() {
     setNotes(notes.filter(note => note.id !== id))
   }
 
+  const handleNotesReorder = (newNotes: NoteAnnotation[]) => {
+    setNotes(newNotes)
+  }
+
   const handleOpenNoteEdit = (id: string) => {
     const note = notes.find((n) => n.id === id)
     if (note) {
@@ -582,6 +586,7 @@ export default function ViewerPage() {
           onStartMoveNote={(id) => setMovingNoteId(id || null)}
           onNoteUpdate={(id, updates) => handleNoteUpdate(id, updates)}
           onNoteDelete={handleNoteDelete}
+          onNotesReorder={handleNotesReorder}
           textAnnotations={textAnnotations}
           isPlacingText={isPlacingText}
           onTogglePlaceText={() => setIsPlacingText(!isPlacingText)}
