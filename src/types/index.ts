@@ -114,12 +114,29 @@ export interface TextAnnotation {
   createdAt: Date
 }
 
+/** Animation Item สำหรับ stack ภายใน Section */
+export interface AnimationItem {
+  id: string
+  animationName: string
+  speed: number
+  /** Trim start time (seconds from animation start) */
+  trimIn: number
+  /** Trim end time (seconds from animation start) */
+  trimOut: number
+  /** Original animation duration (seconds) - for reference */
+  originalDuration: number
+}
+
 /** Section สำหรับ Table of Contents */
 export interface TocSection {
   id: string
   title: string
+  /** @deprecated ใช้ animationItems แทน - เก็บไว้เพื่อ backward compatibility */
   animationName?: string
+  /** @deprecated ใช้ animationItems แทน */
   animationSpeed?: number
+  /** รายการ Animation Items (เล่นจากบนลงล่าง) */
+  animationItems?: AnimationItem[]
   cameraX?: number
   cameraY?: number
   cameraZ?: number

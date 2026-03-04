@@ -1,9 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Viewer3D from '../components/Viewer3D'
-import ControlsSidebar from '../components/ControlsSidebar'
-import RightDrawer from '../components/RightDrawer'
-import { AnnotationToolDrawer } from '../components/annotation-tool'
 import TableOfContentsDrawer from '../components/TableOfContentsDrawer'
 import TCPreview from '../components/TCPreview'
 import TimelinePanel from '../components/TimelinePanel'
@@ -26,15 +23,11 @@ const defaultNodeTransform = (): NodeTransform => ({
   scale: 1,
 })
 
-export default function ViewerPage() {
+export default function TimelinePage() {
   const navigate = useNavigate()
-  const location = useLocation()
-  const isAnnotationTool = location.pathname === '/annotation-tool'
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
 
   // Drawer controls state
-  const [leftDrawerOpen, setLeftDrawerOpen] = useState(true)
-  const [rightDrawerOpen, setRightDrawerOpen] = useState(false)
   const [tocDrawerOpen, setTocDrawerOpen] = useState(false)
 
   // Model controls state
@@ -137,9 +130,6 @@ export default function ViewerPage() {
   // Part list
   const [partListItems, setPartListItems] = useState<PartListItem[]>([])
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null)
-  const [isAddingPart, setIsAddingPart] = useState(false)
-  const [pendingPartNodeName, setPendingPartNodeName] = useState<string | null>(null)
-  const [pendingPartLabel, setPendingPartLabel] = useState('')
 
   // Table of Contents sections state
   const [tocSections, setTocSections] = useState<TocSection[]>([])
@@ -165,22 +155,18 @@ export default function ViewerPage() {
 
   useEffect(() => {
     if (!pbState) return
-    // Apply camera instantly (no smooth transition – playback engine handles interpolation)
     setCameraX(pbState.cameraX)
     setCameraY(pbState.cameraY)
     setCameraZ(pbState.cameraZ)
     setFov(pbState.cameraFov)
-    // Apply highlights
     setTocHighlightNodes(pbState.highlightNodes)
 
-    // On shot change → apply animation
     if (pbState.activeShotIndex !== prevActiveShotRef.current) {
       prevActiveShotRef.current = pbState.activeShotIndex
       if (pbState.animationName) {
         setSelectedAnimation(pbState.animationName)
         setAnimationSpeed(pbState.animationSpeed)
         setAnimationEnabled(true)
-        // restart clip
         const modelRef = (window as any).__modelRef
         if (modelRef) {
           modelRef.stop()
@@ -256,7 +242,6 @@ export default function ViewerPage() {
   // ─── Keyboard shortcuts ───
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Ignore when typing in inputs
       const tag = (e.target as HTMLElement).tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
 
@@ -333,13 +318,6 @@ export default function ViewerPage() {
     })
   }
 
-  const updateNodeTransform = (nodeName: string, patch: Partial<NodeTransform>) => {
-    setNodeTransforms((prev) => ({
-      ...prev,
-      [nodeName]: { ...defaultNodeTransform(), ...prev[nodeName], ...patch },
-    }))
-  }
-
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
@@ -381,9 +359,6 @@ export default function ViewerPage() {
       setIsPlacingText(false)
       setPartListItems([])
       setSelectedPartId(null)
-      setIsAddingPart(false)
-      setPendingPartNodeName(null)
-      setPendingPartLabel('')
       setEnvPreset('sunset')
       if (envHdrUrl?.startsWith('blob:')) URL.revokeObjectURL(envHdrUrl)
       setEnvHdrUrl(null)
@@ -392,20 +367,6 @@ export default function ViewerPage() {
       setEnvBackgroundIntensity(1)
       setEnvIntensity(1)
     }
-  }
-
-  const handlePartListAdd = () => {
-    if (!pendingPartNodeName?.trim() || !pendingPartLabel.trim()) return
-    const newPart: PartListItem = {
-      id: `part-${Date.now()}`,
-      nodeName: pendingPartNodeName.trim(),
-      label: pendingPartLabel.trim(),
-    }
-    setPartListItems((prev) => [...prev, newPart])
-    setSelectedPartId(newPart.id)
-    setPendingPartNodeName(null)
-    setPendingPartLabel('')
-    setIsAddingPart(false)
   }
 
   const handlePartListDelete = (id: string) => {
@@ -432,13 +393,11 @@ export default function ViewerPage() {
       positionY: payload.y,
       positionZ: payload.z,
       text: '',
-      pages: [{ content: '' }, { content: '' }],
+      pages: [{ content: '' }],
       offsetY: 0,
       cardWidth: 300,
       cardHeight: 240,
       createdAt: new Date(),
-      interactionMode: 'On Click',
-      displayStyle: 'Text',
       ...(payload.attachedBoneName && payload.attachedBoneOffset && {
         attachedBoneName: payload.attachedBoneName,
         attachedBoneOffset: payload.attachedBoneOffset,
@@ -454,10 +413,6 @@ export default function ViewerPage() {
 
   const handleNoteDelete = (id: string) => {
     setNotes(notes.filter(note => note.id !== id))
-  }
-
-  const handleNotesReorder = (newNotes: NoteAnnotation[]) => {
-    setNotes(newNotes)
   }
 
   const handleOpenNoteEdit = (id: string) => {
@@ -505,42 +460,12 @@ export default function ViewerPage() {
     setIsPlacingText(false)
   }
 
-  const handleTextUpdate = (id: string, updates: Partial<TextAnnotation>) => {
-    setTextAnnotations(textAnnotations.map(text =>
-      text.id === id ? { ...text, ...updates } : text
-    ))
-  }
-
-  const handleTextDelete = (id: string) => {
-    setTextAnnotations(textAnnotations.filter(text => text.id !== id))
-  }
-
   const handleAnimationNamesChange = (names: string[]) => {
     setAnimationNames(names)
     if (names.length > 0 && !selectedAnimation) {
       setSelectedAnimation(names[0])
       setAnimationEnabled(true)
     }
-  }
-
-  const handleAnimationPlay = () => {
-    const modelRef = (window as any).__modelRef
-    if (modelRef) modelRef.play()
-  }
-
-  const handleAnimationPause = () => {
-    const modelRef = (window as any).__modelRef
-    if (modelRef) modelRef.pause()
-  }
-
-  const handleAnimationStop = () => {
-    const modelRef = (window as any).__modelRef
-    if (modelRef) modelRef.stop()
-  }
-
-  const handleAnimationReset = () => {
-    const modelRef = (window as any).__modelRef
-    if (modelRef) modelRef.reset()
   }
 
   return (
@@ -575,125 +500,6 @@ export default function ViewerPage() {
         }}
         onAddToTimeline={handleAddShot}
       />
-      {isAnnotationTool ? (
-        <AnnotationToolDrawer
-          isOpen={rightDrawerOpen}
-          setIsOpen={setRightDrawerOpen}
-          notes={notes}
-          isPlacingNote={isPlacingNote}
-          onTogglePlaceNote={() => setIsPlacingNote(!isPlacingNote)}
-          movingNoteId={movingNoteId}
-          onStartMoveNote={(id) => setMovingNoteId(id || null)}
-          onNoteUpdate={(id, updates) => handleNoteUpdate(id, updates)}
-          onNoteDelete={handleNoteDelete}
-          onNotesReorder={handleNotesReorder}
-          textAnnotations={textAnnotations}
-          isPlacingText={isPlacingText}
-          onTogglePlaceText={() => setIsPlacingText(!isPlacingText)}
-          onTextUpdate={handleTextUpdate}
-          onTextDelete={handleTextDelete}
-          nodeNames={nodeNames}
-          partListItems={partListItems}
-          isAddingPart={isAddingPart}
-          setIsAddingPart={setIsAddingPart}
-          pendingPartNodeName={pendingPartNodeName}
-          setPendingPartNodeName={setPendingPartNodeName}
-          pendingPartLabel={pendingPartLabel}
-          setPendingPartLabel={setPendingPartLabel}
-          onPartListAdd={handlePartListAdd}
-        />
-      ) : (
-      <RightDrawer
-        isOpen={rightDrawerOpen}
-        setIsOpen={setRightDrawerOpen}
-        notes={notes}
-        isPlacingNote={isPlacingNote}
-        onTogglePlaceNote={() => setIsPlacingNote(!isPlacingNote)}
-        onNoteUpdate={(id, updates) => handleNoteUpdate(id, updates)}
-        onNoteDelete={handleNoteDelete}
-        movingNoteId={movingNoteId}
-        onStartMoveNote={(id) => setMovingNoteId(id || null)}
-        textAnnotations={textAnnotations}
-        isPlacingText={isPlacingText}
-        onTogglePlaceText={() => setIsPlacingText(!isPlacingText)}
-        onTextUpdate={handleTextUpdate}
-        onTextDelete={handleTextDelete}
-        nodeNames={nodeNames}
-        partListItems={partListItems}
-        isAddingPart={isAddingPart}
-        setIsAddingPart={setIsAddingPart}
-        pendingPartNodeName={pendingPartNodeName}
-        setPendingPartNodeName={setPendingPartNodeName}
-        pendingPartLabel={pendingPartLabel}
-        setPendingPartLabel={setPendingPartLabel}
-        onPartListAdd={handlePartListAdd}
-      />
-      )}
-      <ControlsSidebar
-        modelControls={{
-          positionX, positionY, positionZ,
-          rotationX, rotationY, rotationZ, scale,
-          setPositionX, setPositionY, setPositionZ,
-          setRotationX, setRotationY, setRotationZ, setScale,
-        }}
-        animationControls={{
-          enabled: animationEnabled, selectedAnimation, animationNames,
-          speed: animationSpeed, loop: animationLoop,
-          mode: animationMode, sequence: animationSequence,
-          setEnabled: setAnimationEnabled, setSelectedAnimation,
-          setSpeed: setAnimationSpeed, setLoop: setAnimationLoop,
-          setMode: setAnimationMode, setSequence: setAnimationSequence,
-          onPlay: handleAnimationPlay, onPause: handleAnimationPause,
-          onStop: handleAnimationStop, onReset: handleAnimationReset,
-        }}
-        lightingControls={{
-          ambientIntensity, directionalIntensity,
-          directionalX, directionalY, directionalZ,
-          setAmbientIntensity, setDirectionalIntensity,
-          setDirectionalX, setDirectionalY, setDirectionalZ,
-        }}
-        cameraControls={{
-          cameraX, cameraY, cameraZ, fov,
-          setCameraX, setCameraY, setCameraZ, setFov,
-        }}
-        sceneControls={{
-          containerWidth, containerHeight, containerAlign, containerVerticalAlign,
-          setContainerWidth, setContainerHeight, setContainerAlign, setContainerVerticalAlign,
-          backgroundColor, enableGrid, gridSize, gridDivisions,
-          gridCellColor, gridSectionColor, gridPositionY,
-          setBackgroundColor, setEnableGrid, setGridSize, setGridDivisions,
-          setGridCellColor, setGridSectionColor, setGridPositionY,
-          envPreset, envHdrUrl, envBackground,
-          envBackgroundBlurriness, envBackgroundIntensity, envIntensity,
-          setEnvPreset, setEnvHdrUrl, setEnvBackground,
-          setEnvBackgroundBlurriness, setEnvBackgroundIntensity, setEnvIntensity,
-        }}
-        skeletonControls={{
-          skeletonNames, selectedSkeleton, skeletonVisible, showSkeletonHelper,
-          setSkeletonNames, setSelectedSkeleton, setSkeletonVisible, setShowSkeletonHelper,
-        }}
-        materialControls={{
-          materialNames, selectedMaterial, materialColor,
-          materialMetalness, materialRoughness, materialOpacity,
-          materialEmissive, materialEmissiveIntensity, materialTextureMap,
-          setMaterialNames, setSelectedMaterial, setMaterialColor,
-          setMaterialMetalness, setMaterialRoughness, setMaterialOpacity,
-          setMaterialEmissive, setMaterialEmissiveIntensity, setMaterialTextureMap,
-        }}
-        textureControls={{
-          textureNames, selectedTexture,
-          textureScaleX, textureScaleY,
-          textureOffsetX, textureOffsetY, textureRotation,
-          setTextureNames, setSelectedTexture,
-          setTextureScaleX, setTextureScaleY,
-          setTextureOffsetX, setTextureOffsetY, setTextureRotation,
-        }}
-        nodeControls={{
-          nodeNames, nodeTransforms, updateNodeTransform,
-        }}
-        isOpen={leftDrawerOpen}
-        setIsOpen={setLeftDrawerOpen}
-      />
       <div
         className="flex-1 relative"
         id="viewer-3d"
@@ -703,8 +509,6 @@ export default function ViewerPage() {
             !target.closest('[data-drawer]') &&
             !target.closest('[data-drawer-toggle]')
           ) {
-            setLeftDrawerOpen(false)
-            setRightDrawerOpen(false)
             setTocDrawerOpen(false)
           }
         }}
@@ -830,7 +634,6 @@ export default function ViewerPage() {
           onNoteUpdate={handleNoteUpdate}
           onNoteDelete={handleNoteDelete}
           onNoteEdit={handleOpenNoteEdit}
-          showEditButtonOnNoteCards={!isAnnotationTool}
           focusNotePosition={focusNotePosition}
           onFocusNoteDone={() => setFocusNotePosition(null)}
           movingNoteId={movingNoteId}
@@ -872,14 +675,6 @@ export default function ViewerPage() {
             }}
           >
             Clear
-          </Button>
-          <Button
-            variant={showNoteAnnotations ? 'secondary' : 'outline'}
-            onClick={() => setShowNoteAnnotations((v) => !v)}
-            title={showNoteAnnotations ? 'ซ่อน Note Annotations' : 'แสดง Note Annotations'}
-          >
-            <StickyNote className="mr-2 h-4 w-4" />
-            Note Annotations
           </Button>
         </div>
 

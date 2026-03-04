@@ -1,19 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Viewer3D from '../components/Viewer3D'
-import ControlsSidebar from '../components/ControlsSidebar'
-import RightDrawer from '../components/RightDrawer'
-import { AnnotationToolDrawer } from '../components/annotation-tool'
-import TableOfContentsDrawer from '../components/TableOfContentsDrawer'
+import TableOfContentsDrawer, { type SectionPlaybackState } from '../components/TableOfContentsDrawer'
 import TCPreview from '../components/TCPreview'
-import TimelinePanel from '../components/TimelinePanel'
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card'
 import { Button } from '../components/ui/button'
 import { Upload, Trash2, ArrowLeft, StickyNote, Download, FolderOpen } from 'lucide-react'
-import type { NodeTransform, NoteAnnotation, NotePage, TextAnnotation, PartListItem, TocSection, Sequence, Shot } from '../types'
+import type { NodeTransform, NoteAnnotation, NotePage, TextAnnotation, PartListItem, TocSection } from '../types'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogBody, DialogFooter } from '../components/ui/dialog'
 import NoteRichEditor from '../components/annotations/NoteRichEditor'
-import { usePlaybackEngine } from '../hooks/usePlaybackEngine'
 
 const defaultNodeTransform = (): NodeTransform => ({
   visible: true,
@@ -26,15 +21,11 @@ const defaultNodeTransform = (): NodeTransform => ({
   scale: 1,
 })
 
-export default function ViewerPage() {
+export default function TableOfContentsPage() {
   const navigate = useNavigate()
-  const location = useLocation()
-  const isAnnotationTool = location.pathname === '/annotation-tool'
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
 
   // Drawer controls state
-  const [leftDrawerOpen, setLeftDrawerOpen] = useState(true)
-  const [rightDrawerOpen, setRightDrawerOpen] = useState(false)
   const [tocDrawerOpen, setTocDrawerOpen] = useState(false)
 
   // Model controls state
@@ -137,9 +128,6 @@ export default function ViewerPage() {
   // Part list
   const [partListItems, setPartListItems] = useState<PartListItem[]>([])
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null)
-  const [isAddingPart, setIsAddingPart] = useState(false)
-  const [pendingPartNodeName, setPendingPartNodeName] = useState<string | null>(null)
-  const [pendingPartLabel, setPendingPartLabel] = useState('')
 
   // Table of Contents sections state
   const [tocSections, setTocSections] = useState<TocSection[]>([])
@@ -149,87 +137,24 @@ export default function ViewerPage() {
   const [cameraTargetZ, setCameraTargetZ] = useState<number | null>(null)
   const [cameraTargetFov, setCameraTargetFov] = useState<number | null>(null)
 
-  // ─── Sequencer / Timeline state ───
-  const [sequence, setSequence] = useState<Sequence>({
-    id: 'seq-default',
-    name: 'Sequence 1',
-    shots: [],
-  })
-  const [defaultShotDuration, setDefaultShotDuration] = useState(3)
-
-  const playback = usePlaybackEngine(sequence.shots, tocSections)
-
-  // When playback is running, override camera / animation / highlights
-  const prevActiveShotRef = useRef(-1)
-  const pbState = playback.state
-
-  useEffect(() => {
-    if (!pbState) return
-    // Apply camera instantly (no smooth transition – playback engine handles interpolation)
-    setCameraX(pbState.cameraX)
-    setCameraY(pbState.cameraY)
-    setCameraZ(pbState.cameraZ)
-    setFov(pbState.cameraFov)
-    // Apply highlights
-    setTocHighlightNodes(pbState.highlightNodes)
-
-    // On shot change → apply animation
-    if (pbState.activeShotIndex !== prevActiveShotRef.current) {
-      prevActiveShotRef.current = pbState.activeShotIndex
-      if (pbState.animationName) {
-        setSelectedAnimation(pbState.animationName)
-        setAnimationSpeed(pbState.animationSpeed)
-        setAnimationEnabled(true)
-        // restart clip
-        const modelRef = (window as any).__modelRef
-        if (modelRef) {
-          modelRef.stop()
-          modelRef.play()
-        }
-      }
-    }
-  }, [pbState])
-
-  // ─── Sequence CRUD ───
-  const handleAddShot = useCallback((sectionId: string) => {
-    const newShot: Shot = {
-      shotId: `shot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      sectionId,
-      duration: defaultShotDuration,
-      transition: { type: 'crossfade', duration: 0.5, easing: 'easeInOut' },
-    }
-    setSequence((prev) => ({ ...prev, shots: [...prev.shots, newShot] }))
-  }, [defaultShotDuration])
-
-  const handleRemoveShot = useCallback((shotId: string) => {
-    setSequence((prev) => ({ ...prev, shots: prev.shots.filter((s) => s.shotId !== shotId) }))
-  }, [])
-
-  const handleUpdateShots = useCallback((shots: Shot[]) => {
-    setSequence((prev) => ({ ...prev, shots }))
-  }, [])
-
-  const handleCreateFromToc = useCallback(() => {
-    const shots: Shot[] = tocSections.map((sec, i) => ({
-      shotId: `shot-${Date.now()}-${i}`,
-      sectionId: sec.id,
-      duration: defaultShotDuration,
-      transition: { type: i === 0 ? 'cut' as const : 'crossfade' as const, duration: 0.5, easing: 'easeInOut' as const },
-    }))
-    setSequence((prev) => ({ ...prev, shots }))
-  }, [tocSections, defaultShotDuration])
+  // Section animation playback state
+  const [animationDurations, setAnimationDurations] = useState<Record<string, number>>({})
+  const [sectionPlayback, setSectionPlayback] = useState<SectionPlaybackState | null>(null)
+  const [animationSeekTime, setAnimationSeekTime] = useState<number | null>(null)
+  const sectionPlaybackRef = useRef<SectionPlaybackState | null>(null)
+  sectionPlaybackRef.current = sectionPlayback
 
   // ─── Save / Load JSON ───
   const handleSaveProject = useCallback(() => {
-    const data = JSON.stringify({ sections: tocSections, sequence }, null, 2)
+    const data = JSON.stringify({ sections: tocSections }, null, 2)
     const blob = new Blob([data], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${sequence.name || 'project'}.json`
+    a.download = 'toc-project.json'
     a.click()
     URL.revokeObjectURL(url)
-  }, [tocSections, sequence])
+  }, [tocSections])
 
   const handleLoadProject = useCallback(() => {
     const input = document.createElement('input')
@@ -243,7 +168,6 @@ export default function ViewerPage() {
         try {
           const data = JSON.parse(reader.result as string)
           if (data.sections) setTocSections(data.sections)
-          if (data.sequence) setSequence(data.sequence)
         } catch {
           // invalid JSON – ignore
         }
@@ -252,30 +176,6 @@ export default function ViewerPage() {
     }
     input.click()
   }, [])
-
-  // ─── Keyboard shortcuts ───
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      // Ignore when typing in inputs
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-
-      if (e.code === 'Space') {
-        e.preventDefault()
-        playback.isPlaying ? playback.pause() : playback.play()
-      }
-      if (e.code === 'ArrowLeft') {
-        e.preventDefault()
-        playback.seek(Math.max(0, playback.currentTime - 0.5))
-      }
-      if (e.code === 'ArrowRight') {
-        e.preventDefault()
-        playback.seek(playback.currentTime + 0.5)
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [playback])
 
   const handleAddTocSection = () => {
     setTocSections((prev) => [...prev, { id: `sec-${Date.now()}`, title: 'New Section' }])
@@ -292,11 +192,9 @@ export default function ViewerPage() {
 
   const handleTocSectionClick = (section: TocSection) => {
     setActiveTocSectionId(section.id)
-    if (section.animationName) {
-      setSelectedAnimation(section.animationName)
-      setAnimationSpeed(section.animationSpeed ?? 1)
-      setAnimationEnabled(true)
-    }
+    // Play section animation stack
+    handlePlaySection(section.id)
+    // Camera
     const hasCamera =
       section.cameraX !== undefined ||
       section.cameraY !== undefined ||
@@ -310,6 +208,105 @@ export default function ViewerPage() {
     }
     setTocHighlightNodes(section.highlightNodes ?? [])
   }
+
+  /** Start playing a section's animation items sequentially */
+  const startAnimationItem = useCallback(
+    (section: TocSection, itemIndex: number) => {
+      const items = section.animationItems ?? []
+      if (itemIndex >= items.length) {
+        // Finished all items
+        setSectionPlayback(null)
+        setAnimationEnabled(false)
+        return
+      }
+      const item = items[itemIndex]
+      setSelectedAnimation(item.animationName)
+      setAnimationSpeed(item.speed)
+      setAnimationLoop(false)
+      // Set seek time BEFORE enabling so Viewer3D's pendingSeekRef picks it up
+      setAnimationSeekTime(item.trimIn)
+      setAnimationEnabled(true)
+      setSectionPlayback({
+        sectionId: section.id,
+        isPlaying: true,
+        currentItemIndex: itemIndex,
+        currentItemProgress: 0,
+        currentItemTime: item.trimIn,
+      })
+    },
+    [],
+  )
+
+  const handlePlaySection = useCallback(
+    (sectionId: string) => {
+      const section = tocSections.find((s) => s.id === sectionId)
+      if (!section) return
+      const items = section.animationItems ?? []
+      // Fallback to legacy single animation
+      if (items.length === 0 && section.animationName) {
+        setSelectedAnimation(section.animationName)
+        setAnimationSpeed(section.animationSpeed ?? 1)
+        setAnimationEnabled(true)
+        return
+      }
+      if (items.length === 0) return
+      startAnimationItem(section, 0)
+    },
+    [tocSections, startAnimationItem],
+  )
+
+  const handlePauseSection = useCallback(() => {
+    setSectionPlayback((prev) =>
+      prev ? { ...prev, isPlaying: false } : null,
+    )
+    setAnimationEnabled(false)
+  }, [])
+
+  const handleStopSection = useCallback(() => {
+    setSectionPlayback(null)
+    setAnimationEnabled(false)
+  }, [])
+
+  /** Called every frame from Viewer3D with the current animation time */
+  const handleAnimationFrame = useCallback(
+    (animName: string, time: number) => {
+      const pb = sectionPlaybackRef.current
+      if (!pb || !pb.isPlaying) return
+      const section = tocSections.find((s) => s.id === pb.sectionId)
+      if (!section) return
+      const items = section.animationItems ?? []
+      const item = items[pb.currentItemIndex]
+      if (!item || item.animationName !== animName) return
+
+      const trimmedDuration = item.trimOut - item.trimIn
+      const progress = trimmedDuration > 0 ? Math.min((time - item.trimIn) / trimmedDuration, 1) : 1
+
+      if (time >= item.trimOut) {
+        // Advance to next item
+        startAnimationItem(section, pb.currentItemIndex + 1)
+        return
+      }
+
+      setSectionPlayback((prev) =>
+        prev
+          ? { ...prev, currentItemProgress: progress, currentItemTime: time }
+          : null,
+      )
+    },
+    [tocSections, startAnimationItem],
+  )
+
+  /** Handle trim preview: seek to a specific time in a specific animation */
+  const handleAnimationPreviewTime = useCallback(
+    (animationName: string, time: number) => {
+      // Don't let trim preview override active section playback
+      if (sectionPlaybackRef.current?.isPlaying) return
+      setSelectedAnimation(animationName)
+      setAnimationEnabled(false)
+      setAnimationSeekTime(time)
+    },
+    [],
+  )
 
   const handleCameraTransitionEnd = () => {
     if (cameraTargetX != null) setCameraX(cameraTargetX)
@@ -331,13 +328,6 @@ export default function ViewerPage() {
       })
       return next
     })
-  }
-
-  const updateNodeTransform = (nodeName: string, patch: Partial<NodeTransform>) => {
-    setNodeTransforms((prev) => ({
-      ...prev,
-      [nodeName]: { ...defaultNodeTransform(), ...prev[nodeName], ...patch },
-    }))
   }
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -381,9 +371,6 @@ export default function ViewerPage() {
       setIsPlacingText(false)
       setPartListItems([])
       setSelectedPartId(null)
-      setIsAddingPart(false)
-      setPendingPartNodeName(null)
-      setPendingPartLabel('')
       setEnvPreset('sunset')
       if (envHdrUrl?.startsWith('blob:')) URL.revokeObjectURL(envHdrUrl)
       setEnvHdrUrl(null)
@@ -392,20 +379,6 @@ export default function ViewerPage() {
       setEnvBackgroundIntensity(1)
       setEnvIntensity(1)
     }
-  }
-
-  const handlePartListAdd = () => {
-    if (!pendingPartNodeName?.trim() || !pendingPartLabel.trim()) return
-    const newPart: PartListItem = {
-      id: `part-${Date.now()}`,
-      nodeName: pendingPartNodeName.trim(),
-      label: pendingPartLabel.trim(),
-    }
-    setPartListItems((prev) => [...prev, newPart])
-    setSelectedPartId(newPart.id)
-    setPendingPartNodeName(null)
-    setPendingPartLabel('')
-    setIsAddingPart(false)
   }
 
   const handlePartListDelete = (id: string) => {
@@ -432,13 +405,11 @@ export default function ViewerPage() {
       positionY: payload.y,
       positionZ: payload.z,
       text: '',
-      pages: [{ content: '' }, { content: '' }],
+      pages: [{ content: '' }],
       offsetY: 0,
       cardWidth: 300,
       cardHeight: 240,
       createdAt: new Date(),
-      interactionMode: 'On Click',
-      displayStyle: 'Text',
       ...(payload.attachedBoneName && payload.attachedBoneOffset && {
         attachedBoneName: payload.attachedBoneName,
         attachedBoneOffset: payload.attachedBoneOffset,
@@ -454,10 +425,6 @@ export default function ViewerPage() {
 
   const handleNoteDelete = (id: string) => {
     setNotes(notes.filter(note => note.id !== id))
-  }
-
-  const handleNotesReorder = (newNotes: NoteAnnotation[]) => {
-    setNotes(newNotes)
   }
 
   const handleOpenNoteEdit = (id: string) => {
@@ -505,42 +472,12 @@ export default function ViewerPage() {
     setIsPlacingText(false)
   }
 
-  const handleTextUpdate = (id: string, updates: Partial<TextAnnotation>) => {
-    setTextAnnotations(textAnnotations.map(text =>
-      text.id === id ? { ...text, ...updates } : text
-    ))
-  }
-
-  const handleTextDelete = (id: string) => {
-    setTextAnnotations(textAnnotations.filter(text => text.id !== id))
-  }
-
   const handleAnimationNamesChange = (names: string[]) => {
     setAnimationNames(names)
     if (names.length > 0 && !selectedAnimation) {
       setSelectedAnimation(names[0])
       setAnimationEnabled(true)
     }
-  }
-
-  const handleAnimationPlay = () => {
-    const modelRef = (window as any).__modelRef
-    if (modelRef) modelRef.play()
-  }
-
-  const handleAnimationPause = () => {
-    const modelRef = (window as any).__modelRef
-    if (modelRef) modelRef.pause()
-  }
-
-  const handleAnimationStop = () => {
-    const modelRef = (window as any).__modelRef
-    if (modelRef) modelRef.stop()
-  }
-
-  const handleAnimationReset = () => {
-    const modelRef = (window as any).__modelRef
-    if (modelRef) modelRef.reset()
   }
 
   return (
@@ -557,6 +494,9 @@ export default function ViewerPage() {
         sections={tocSections}
         activeSectionId={activeTocSectionId}
         onSectionClick={handleTocSectionClick}
+        playingSectionId={sectionPlayback?.sectionId ?? null}
+        onPlaySection={handlePlaySection}
+        onStopSection={handleStopSection}
       />
       <TableOfContentsDrawer
         isOpen={tocDrawerOpen}
@@ -564,6 +504,7 @@ export default function ViewerPage() {
         sections={tocSections}
         animationNames={animationNames}
         nodeNames={nodeNames}
+        animationDurations={animationDurations}
         onAddSection={handleAddTocSection}
         onRemoveSection={handleRemoveTocSection}
         onUpdateSection={handleUpdateTocSection}
@@ -573,126 +514,11 @@ export default function ViewerPage() {
           if (cam.z !== undefined) setCameraZ(cam.z)
           if (cam.fov !== undefined) setFov(cam.fov)
         }}
-        onAddToTimeline={handleAddShot}
-      />
-      {isAnnotationTool ? (
-        <AnnotationToolDrawer
-          isOpen={rightDrawerOpen}
-          setIsOpen={setRightDrawerOpen}
-          notes={notes}
-          isPlacingNote={isPlacingNote}
-          onTogglePlaceNote={() => setIsPlacingNote(!isPlacingNote)}
-          movingNoteId={movingNoteId}
-          onStartMoveNote={(id) => setMovingNoteId(id || null)}
-          onNoteUpdate={(id, updates) => handleNoteUpdate(id, updates)}
-          onNoteDelete={handleNoteDelete}
-          onNotesReorder={handleNotesReorder}
-          textAnnotations={textAnnotations}
-          isPlacingText={isPlacingText}
-          onTogglePlaceText={() => setIsPlacingText(!isPlacingText)}
-          onTextUpdate={handleTextUpdate}
-          onTextDelete={handleTextDelete}
-          nodeNames={nodeNames}
-          partListItems={partListItems}
-          isAddingPart={isAddingPart}
-          setIsAddingPart={setIsAddingPart}
-          pendingPartNodeName={pendingPartNodeName}
-          setPendingPartNodeName={setPendingPartNodeName}
-          pendingPartLabel={pendingPartLabel}
-          setPendingPartLabel={setPendingPartLabel}
-          onPartListAdd={handlePartListAdd}
-        />
-      ) : (
-      <RightDrawer
-        isOpen={rightDrawerOpen}
-        setIsOpen={setRightDrawerOpen}
-        notes={notes}
-        isPlacingNote={isPlacingNote}
-        onTogglePlaceNote={() => setIsPlacingNote(!isPlacingNote)}
-        onNoteUpdate={(id, updates) => handleNoteUpdate(id, updates)}
-        onNoteDelete={handleNoteDelete}
-        movingNoteId={movingNoteId}
-        onStartMoveNote={(id) => setMovingNoteId(id || null)}
-        textAnnotations={textAnnotations}
-        isPlacingText={isPlacingText}
-        onTogglePlaceText={() => setIsPlacingText(!isPlacingText)}
-        onTextUpdate={handleTextUpdate}
-        onTextDelete={handleTextDelete}
-        nodeNames={nodeNames}
-        partListItems={partListItems}
-        isAddingPart={isAddingPart}
-        setIsAddingPart={setIsAddingPart}
-        pendingPartNodeName={pendingPartNodeName}
-        setPendingPartNodeName={setPendingPartNodeName}
-        pendingPartLabel={pendingPartLabel}
-        setPendingPartLabel={setPendingPartLabel}
-        onPartListAdd={handlePartListAdd}
-      />
-      )}
-      <ControlsSidebar
-        modelControls={{
-          positionX, positionY, positionZ,
-          rotationX, rotationY, rotationZ, scale,
-          setPositionX, setPositionY, setPositionZ,
-          setRotationX, setRotationY, setRotationZ, setScale,
-        }}
-        animationControls={{
-          enabled: animationEnabled, selectedAnimation, animationNames,
-          speed: animationSpeed, loop: animationLoop,
-          mode: animationMode, sequence: animationSequence,
-          setEnabled: setAnimationEnabled, setSelectedAnimation,
-          setSpeed: setAnimationSpeed, setLoop: setAnimationLoop,
-          setMode: setAnimationMode, setSequence: setAnimationSequence,
-          onPlay: handleAnimationPlay, onPause: handleAnimationPause,
-          onStop: handleAnimationStop, onReset: handleAnimationReset,
-        }}
-        lightingControls={{
-          ambientIntensity, directionalIntensity,
-          directionalX, directionalY, directionalZ,
-          setAmbientIntensity, setDirectionalIntensity,
-          setDirectionalX, setDirectionalY, setDirectionalZ,
-        }}
-        cameraControls={{
-          cameraX, cameraY, cameraZ, fov,
-          setCameraX, setCameraY, setCameraZ, setFov,
-        }}
-        sceneControls={{
-          containerWidth, containerHeight, containerAlign, containerVerticalAlign,
-          setContainerWidth, setContainerHeight, setContainerAlign, setContainerVerticalAlign,
-          backgroundColor, enableGrid, gridSize, gridDivisions,
-          gridCellColor, gridSectionColor, gridPositionY,
-          setBackgroundColor, setEnableGrid, setGridSize, setGridDivisions,
-          setGridCellColor, setGridSectionColor, setGridPositionY,
-          envPreset, envHdrUrl, envBackground,
-          envBackgroundBlurriness, envBackgroundIntensity, envIntensity,
-          setEnvPreset, setEnvHdrUrl, setEnvBackground,
-          setEnvBackgroundBlurriness, setEnvBackgroundIntensity, setEnvIntensity,
-        }}
-        skeletonControls={{
-          skeletonNames, selectedSkeleton, skeletonVisible, showSkeletonHelper,
-          setSkeletonNames, setSelectedSkeleton, setSkeletonVisible, setShowSkeletonHelper,
-        }}
-        materialControls={{
-          materialNames, selectedMaterial, materialColor,
-          materialMetalness, materialRoughness, materialOpacity,
-          materialEmissive, materialEmissiveIntensity, materialTextureMap,
-          setMaterialNames, setSelectedMaterial, setMaterialColor,
-          setMaterialMetalness, setMaterialRoughness, setMaterialOpacity,
-          setMaterialEmissive, setMaterialEmissiveIntensity, setMaterialTextureMap,
-        }}
-        textureControls={{
-          textureNames, selectedTexture,
-          textureScaleX, textureScaleY,
-          textureOffsetX, textureOffsetY, textureRotation,
-          setTextureNames, setSelectedTexture,
-          setTextureScaleX, setTextureScaleY,
-          setTextureOffsetX, setTextureOffsetY, setTextureRotation,
-        }}
-        nodeControls={{
-          nodeNames, nodeTransforms, updateNodeTransform,
-        }}
-        isOpen={leftDrawerOpen}
-        setIsOpen={setLeftDrawerOpen}
+        onAnimationPreviewTime={handleAnimationPreviewTime}
+        sectionPlayback={sectionPlayback}
+        onPlaySection={handlePlaySection}
+        onPauseSection={handlePauseSection}
+        onStopSection={handleStopSection}
       />
       <div
         className="flex-1 relative"
@@ -703,8 +529,6 @@ export default function ViewerPage() {
             !target.closest('[data-drawer]') &&
             !target.closest('[data-drawer-toggle]')
           ) {
-            setLeftDrawerOpen(false)
-            setRightDrawerOpen(false)
             setTocDrawerOpen(false)
           }
         }}
@@ -765,6 +589,9 @@ export default function ViewerPage() {
           animationMode={animationMode}
           animationSequence={animationSequence}
           onAnimationNamesChange={handleAnimationNamesChange}
+          onAnimationDurationsChange={setAnimationDurations}
+          animationSeekTime={animationSeekTime}
+          onAnimationFrame={handleAnimationFrame}
           ambientIntensity={ambientIntensity}
           directionalIntensity={directionalIntensity}
           directionalX={directionalX}
@@ -830,7 +657,6 @@ export default function ViewerPage() {
           onNoteUpdate={handleNoteUpdate}
           onNoteDelete={handleNoteDelete}
           onNoteEdit={handleOpenNoteEdit}
-          showEditButtonOnNoteCards={!isAnnotationTool}
           focusNotePosition={focusNotePosition}
           onFocusNoteDone={() => setFocusNotePosition(null)}
           movingNoteId={movingNoteId}
@@ -872,14 +698,6 @@ export default function ViewerPage() {
             }}
           >
             Clear
-          </Button>
-          <Button
-            variant={showNoteAnnotations ? 'secondary' : 'outline'}
-            onClick={() => setShowNoteAnnotations((v) => !v)}
-            title={showNoteAnnotations ? 'ซ่อน Note Annotations' : 'แสดง Note Annotations'}
-          >
-            <StickyNote className="mr-2 h-4 w-4" />
-            Note Annotations
           </Button>
         </div>
 
@@ -960,27 +778,6 @@ export default function ViewerPage() {
           </DialogContent>
         </Dialog>
       </div>
-
-      {/* ─── Timeline Panel (bottom) ─── */}
-      <TimelinePanel
-        sequence={sequence}
-        sections={tocSections}
-        currentTime={playback.currentTime}
-        isPlaying={playback.isPlaying}
-        playbackRate={playback.playbackRate}
-        onPlay={playback.play}
-        onPause={playback.pause}
-        onStop={playback.stop}
-        onSeek={playback.seek}
-        onSetPlaybackRate={playback.setPlaybackRate}
-        onUpdateShots={handleUpdateShots}
-        onAddShot={handleAddShot}
-        onRemoveShot={handleRemoveShot}
-        onCreateFromToc={handleCreateFromToc}
-        defaultDuration={defaultShotDuration}
-        onSetDefaultDuration={setDefaultShotDuration}
-        activeShotIndex={playback.state?.activeShotIndex ?? -1}
-      />
     </div>
   )
 }
