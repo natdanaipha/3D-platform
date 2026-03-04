@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Viewer3D from '../components/Viewer3D'
 import ControlsSidebar from '../components/ControlsSidebar'
 import RightDrawer from '../components/RightDrawer'
